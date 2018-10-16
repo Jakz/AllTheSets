@@ -1,0 +1,7 @@
+## Interface: 80000
+## Title: AllTheSets
+## Author: Jack
+## Version: 0.1
+## SavedVariables: ATSRepository
+
+AllTheSets.lua
