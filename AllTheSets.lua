@@ -141,10 +141,12 @@ local SET_PROGRESS_BAR_MAX_WIDTH = 204;
 local IN_PROGRESS_FONT_COLOR = CreateColor(0.251, 0.753, 0.251);
 local IN_PROGRESS_FONT_COLOR_CODE = "|cff40c040";
 
-
 local options = {
   filterShowCollected = true,
   filterShowNotCollected = true,
+  filterShowHiddenByDefault = false,
+  filterShowPvP = true,
+  filterShowPvE = true,
   filterClassMask = ALL_CLASSES_MASK,
   filterExpansionMask = ALL_EXPANSIONS_MASK,
   filterFactionMask =
@@ -153,8 +155,39 @@ local options = {
     Alliance = true
   },
   
-  interfaceShowClassIcons = false
+  interfaceShowClassIconsInList = false,
+  interfaceShowDetailsDebugText = true
 };
+
+local function ResetSearchFilter()
+  options.filterShowCollected = true
+  options.filterShowNotCollected = true
+  options.filterShowHiddenByDefault = false
+
+  options.filterShowPvP = true
+  options.filterShowPvE = true
+  
+  options.filterExpansionMask = ALL_EXPANSIONS_MASK
+  
+  local _, playerClass, _ = UnitClass('player')
+  for m, c in pairs(classConstants) do
+    if c.name == playerClass then
+      options.filterClassMask = m
+    end
+  end
+  
+  local _, playerFaction = UnitFactionGroup('player')
+  if (playerFaction == 'Horde') then -- TODO: make generic with some Blizzard constant?
+    options.filterFactionMask.Horde = true
+    options.filterFactionMask.Alliance = false
+  elseif (playerFaction == 'Alliance') then -- TODO: make generic with some Blizzard constant?
+    options.filterFactionMask.Horde = false
+    options.filterFactionMask.Alliance = true
+  else
+    options.filterFactionMask.Horde = true
+    options.filterFactionMask.Alliance = true
+  end
+end
 
 WardrobeSetsDataProviderMixin = {};
 
@@ -181,28 +214,36 @@ function WardrobeSetsDataProviderMixin:SortSets(sets, reverseUIOrder)
   table.sort(sets, comparison);
 end
 
-function WardrobeSetsDataProviderMixin:ResetFilterClassMask()
-  local _, playerClass, _ = UnitClass('player')
-  for m, c in pairs(classConstants) do
-    if c.name == playerClass then
-      options.filterClassMask = m
-    end
-  end
-end
-
 function WardrobeSetsDataProviderMixin:IsMatching(searchText, set)
   local isCollected = self:IsSetCollected(set)
   local faction = set.requiredFaction
   
+  local isPvpPveMatching = 
+    (options.filterShowPvP and options.filterShowPvE) or 
+    (set.label:match("Season") and options.filterShowPvP) or
+    (not set.label:match("Season") and options.filterShowPvE)
+
+  
   -- return set.setID == 435
     
+  -- this is the main filtering function which takes into account all the options set in the frame
   if ((options.filterShowCollected and isCollected) or
   (options.filterShowNotCollected and not isCollected)) and
+  
   (BitWiseOperation(options.filterClassMask, set.classMask, AND) ~= 0) and
+  
   (BitWiseOperation(options.filterExpansionMask, BitwiseLeftShift(1, set.expansionID), AND) ~= 0) and
+  
+  (options.filterShowHiddenByDefault or not set.hiddenUntilCollected) and
+  
   ((options.filterFactionMask.Horde and (faction == 'Horde' or faction == nil)) or
   (options.filterFactionMask.Alliance and (faction == 'Alliance' or faction == nil))) and
-  (set.name:lower():match(searchText) or set.label:lower():match(searchText)) then
+  
+  isPvpPveMatching and
+  
+  (set.name:lower():match(searchText) or set.label:lower():match(searchText)) 
+  
+  then
     return true
   end
   return false
@@ -210,7 +251,6 @@ end
 
 function WardrobeSetsDataProviderMixin:GetBaseSets()
   if ( not self.baseSets ) then
-    -- printTable(options)
     self.baseSets = {}
     C_TransmogCollection.ClearSearch(2)
     
@@ -219,8 +259,9 @@ function WardrobeSetsDataProviderMixin:GetBaseSets()
     
     local searchText = WardrobeCollectionFrame.searchBox:GetText()
     
+    -- if set is matching current filter add it to list and map its id
     for i, set in ipairs(allSets) do
-      if -- not set.baseSetID and 
+      if not set.baseSetID and 
       self:IsMatching(searchText, set) then
         self.baseSets[#self.baseSets + 1] = set
         validIDs[set.setID] = set
@@ -229,18 +270,22 @@ function WardrobeSetsDataProviderMixin:GetBaseSets()
     
     self.variantSets = { }
     
-    for i, set in ipairs(allSets) do
-      
+    -- compute variants list by storing all sets which has baseSetID of a matching set
+    for i, set in ipairs(allSets) do     
       if validIDs[set.baseSetID] ~= nil then
-  
         if not self.variantSets[set.baseSetID] then
           self.variantSets[set.baseSetID] = { validIDs[set.baseSetID] }
         end
-
         self.variantSets[set.baseSetID][#self.variantSets[set.baseSetID] + 1] = set      
       end
     end
-
+    
+    -- sort variants by uiOrder
+    for _, variants in pairs(self.variantSets) do
+      table.sort(variants, function(s1, s2)
+        return s1.uiOrder < s2.uiOrder
+      end)
+    end
     
     self:DetermineFavorites();
     self:SortSets(self.baseSets);
@@ -316,6 +361,7 @@ function WardrobeSetsDataProviderMixin:GetBaseSetData(setID)
   if ( not self.baseSetsData[setID] ) then
     local baseSetID = C_TransmogSets.GetBaseSetID(setID);
     if ( baseSetID ~= setID ) then
+      debug(true, "set for " .. setID .. "is not base (" .. baseSetID .. " is base)")
       return;
     end
     local topCollected, topTotal = self:GetSetSourceCounts(setID);
@@ -621,8 +667,9 @@ function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
     self.DetailsFrame.Name:Show();
     self.DetailsFrame.LongName:Hide();
   end
-  self.DetailsFrame.Label:SetText(setInfo.label .. " (" .. setInfo.setID .. ")"); -- TODO: remove id
-
+  
+  self.DetailsFrame.Label:SetText(setInfo.label)
+  
   local newSourceIDs = C_TransmogSets.GetSetNewSources(setID);
 
   self.DetailsFrame.itemFramesPool:ReleaseAll();
@@ -679,6 +726,18 @@ function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
     self.DetailsFrame.VariantSetsButton:Show();
     self.DetailsFrame.VariantSetsButton:SetText(setInfo.description);
   end
+  
+  if options.interfaceShowDetailsDebugText then
+    self.DetailsFrame.DebugString:SetText(
+      'ID: ' .. setInfo.setID .. '\n' ..
+      'baseID: ' .. baseSetID .. '\n' ..
+      'variants: ' .. #variantSets .. '\n' ..
+      'uiOrder: ' .. setInfo.uiOrder
+    )
+    self.DetailsFrame.DebugString:Show()
+  else
+    self.DetailsFrame.DebugString:Hide()
+  end
 end
 
 function MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown()
@@ -732,7 +791,7 @@ function MyWardrobeSetsCollectionScrollFrameMixin_Update(self)
         color = GRAY_FONT_COLOR;
       end
    
-      if options.interfaceShowClassIcons then
+      if options.interfaceShowClassIconsInList then
         local setClass = classConstants[baseSet.classMask]
       
         if setClass then
@@ -818,7 +877,23 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     end
     info.checked = options.filterShowNotCollected
     UIDropDownMenu_AddButton(info, level);
-
+    
+    info.text = 'PvE';
+    info.func = function(_, _, _, value) 
+      options.filterShowPvE = value 
+      refresh()
+    end
+    info.checked = options.filterShowPvE
+    UIDropDownMenu_AddButton(info, level);
+    
+    info.text = 'PvP';
+    info.func = function(_, _, _, value) 
+      options.filterShowPvP = value 
+      refresh()
+    end
+    info.checked = options.filterShowPvP
+    UIDropDownMenu_AddButton(info, level);
+    
     UIDropDownMenu_AddSeparator(1);
   
     info.checked =   nil;
@@ -838,6 +913,31 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     info.text = 'Factions' -- TODO: localize
     info.value = 'factions'
     UIDropDownMenu_AddButton(info, level)  
+    
+    UIDropDownMenu_AddSeparator(1);
+    
+    -- Hidden by default checkbox 
+    info.isNotRadio = true
+    info.hasArrow = false
+    info.notCheckable = false
+    info.text = 'Show hidden by default'; -- TODO: localize
+    info.func = function(_, _, _, value) 
+      options.filterShowHiddenByDefault = value 
+      refresh()
+    end
+    info.checked = options.filterShowHiddenByDefault
+    UIDropDownMenu_AddButton(info, level);
+    
+    -- Reset filter button
+    info.notCheckable = true
+    info.text = 'Reset default filter' -- TODO: localize
+    info.func = function(_, _, _, value) 
+      ResetSearchFilter();
+      UIDropDownMenu_Refresh(self, 1, 1);
+      refresh()
+    end
+    UIDropDownMenu_AddButton(info, level);
+    
     
   elseif level == 2 then  
     
@@ -965,25 +1065,17 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
          
     end
   end
-
-  --[[ info = UIDropDownMenu_CreateInfo();
-  info.keepShownOnClick = true;
-  info.isNotRadio = true;
-
-  info.text = TRANSMOG_SET_PVE;
-  info.func = function(_, _, _, value)
-  C_TransmogSets.SetBaseSetsFilter(LE_TRANSMOG_SET_FILTER_PVE, value);
-  end 
-  info.checked = C_TransmogSets.GetBaseSetsFilter(LE_TRANSMOG_SET_FILTER_PVE);
-  UIDropDownMenu_AddButton(info, level);
-
-  info.text = TRANSMOG_SET_PVP;
-  info.func = function(_, _, _, value)
-  C_TransmogSets.SetBaseSetsFilter(LE_TRANSMOG_SET_FILTER_PVP, value);
-  end 
-  info.checked = C_TransmogSets.GetBaseSetsFilter(LE_TRANSMOG_SET_FILTER_PVP);
-  UIDropDownMenu_AddButton(info, level); ]]
 end
+
+local function EnhanceBlizzardUI()
+  local DetailsFrame = WardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame
+  
+  DetailsFrame.DebugString = DetailsFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+  DetailsFrame.DebugString:SetJustifyH("LEFT")
+  DetailsFrame.DebugString:SetSize(100,100)
+  DetailsFrame.DebugString:SetPoint("BOTTOMLEFT", 10, 0)
+end
+
 
 local frame = CreateFrame("frame", "AllTheSetsFrame");
 local function onEvent(self, event, ...)
@@ -1005,7 +1097,7 @@ local function onEvent(self, event, ...)
     -- WardrobeCollectionFrame.SetsTransmogFrame
     -- WardrobeCollectionFrame.FilterButton:SetEnabled(false);
     
-    SetsDataProvider:ResetFilterClassMask()
+    ResetSearchFilter()
 
         
     WardrobeCollectionFrame.SetsCollectionFrame:HookScript("OnShow", 
@@ -1092,6 +1184,8 @@ local function onEvent(self, event, ...)
 
       WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['update'] = MyWardrobeSetsCollectionScrollFrameMixin_Update
       WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['Update'] = MyWardrobeSetsCollectionScrollFrameMixin_Update
+        
+      EnhanceBlizzardUI()
         
       local buttons = WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame.buttons       
       for i = 1, #buttons do
