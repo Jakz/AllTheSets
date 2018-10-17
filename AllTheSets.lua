@@ -189,9 +189,9 @@ local function ResetSearchFilter()
   end
 end
 
-WardrobeSetsDataProviderMixin = {};
+MyDataProvider = {};
 
-function WardrobeSetsDataProviderMixin:SortSets(sets, reverseUIOrder)
+function MyDataProvider:SortSets(sets, reverseUIOrder)
   local comparison = function(set1, set2)
     local groupFavorite1 = set1.favoriteSetID and true;
     local groupFavorite2 = set2.favoriteSetID and true;
@@ -214,7 +214,7 @@ function WardrobeSetsDataProviderMixin:SortSets(sets, reverseUIOrder)
   table.sort(sets, comparison);
 end
 
-function WardrobeSetsDataProviderMixin:IsMatching(searchText, set)
+function MyDataProvider:IsMatching(searchText, set)
   local isCollected = self:IsSetCollected(set)
   local faction = set.requiredFaction
   
@@ -249,7 +249,7 @@ function WardrobeSetsDataProviderMixin:IsMatching(searchText, set)
   return false
 end
 
-function WardrobeSetsDataProviderMixin:GetBaseSets()
+function MyDataProvider:GetBaseSets()
   if ( not self.baseSets ) then
     self.baseSets = {}
     C_TransmogCollection.ClearSearch(2)
@@ -262,7 +262,9 @@ function WardrobeSetsDataProviderMixin:GetBaseSets()
     -- if set is matching current filter add it to list and map its id
     for i, set in ipairs(allSets) do
       if not set.baseSetID and 
-      self:IsMatching(searchText, set) then
+      self:IsMatching(searchText, set) then       
+        set.singleClass = classConstants[set.classMask]    
+        
         self.baseSets[#self.baseSets + 1] = set
         validIDs[set.setID] = set
       end
@@ -293,7 +295,7 @@ function WardrobeSetsDataProviderMixin:GetBaseSets()
   return self.baseSets;
 end
 
-function WardrobeSetsDataProviderMixin:GetBaseSetByID(baseSetID)
+function MyDataProvider:GetBaseSetByID(baseSetID)
   local baseSets = self:GetBaseSets();
   for i = 1, #baseSets do
     debug(true, 'getting base set for ' .. baseSetID)
@@ -305,7 +307,7 @@ function WardrobeSetsDataProviderMixin:GetBaseSetByID(baseSetID)
   return nil, nil;
 end
 
-function WardrobeSetsDataProviderMixin:GetVariantSets(baseSetID)
+function MyDataProvider:GetVariantSets(baseSetID)
   if (not self.variantSets) then
     self:GetBaseSets()
   end
@@ -313,7 +315,7 @@ function WardrobeSetsDataProviderMixin:GetVariantSets(baseSetID)
   return self.variantSets[baseSetID] or { };
 end
 
-function WardrobeSetsDataProviderMixin:GetSetSourceData(setID)
+function MyDataProvider:GetSetSourceData(setID)
   if ( not self.sourceData ) then
     self.sourceData = { };
   end
@@ -344,16 +346,16 @@ function WardrobeSetsDataProviderMixin:GetSetSourceData(setID)
   return sourceData;
 end
 
-function WardrobeSetsDataProviderMixin:GetSetSources(setID)
+function MyDataProvider:GetSetSources(setID)
   return self:GetSetSourceData(setID).sources;
 end
 
-function WardrobeSetsDataProviderMixin:GetSetSourceCounts(setID)
+function MyDataProvider:GetSetSourceCounts(setID)
   local sourceData = self:GetSetSourceData(setID);
   return sourceData.numCollected, sourceData.numTotal;
 end
 
-function WardrobeSetsDataProviderMixin:GetBaseSetData(setID)
+function MyDataProvider:GetBaseSetData(setID)
   debug(false, 'Data::GetBaseSetData(' .. setID .. ')')
   if ( not self.baseSetsData ) then
     self.baseSetsData = { };
@@ -379,7 +381,7 @@ function WardrobeSetsDataProviderMixin:GetBaseSetData(setID)
   return self.baseSetsData[setID];
 end
 
-function WardrobeSetsDataProviderMixin:GetSetSourceTopCounts(setID)
+function MyDataProvider:GetSetSourceTopCounts(setID)
   local baseSetData = self:GetBaseSetData(setID);
   if ( baseSetData ) then
     return baseSetData.topCollected, baseSetData.topTotal;
@@ -388,7 +390,7 @@ function WardrobeSetsDataProviderMixin:GetSetSourceTopCounts(setID)
   end
 end
 
-function WardrobeSetsDataProviderMixin:IsBaseSetNew(baseSetID)
+function MyDataProvider:IsBaseSetNew(baseSetID)
   local baseSetData = self:GetBaseSetData(baseSetID)
   if ( not baseSetData.newStatus ) then
     local newStatus = C_TransmogSets.SetHasNewSources(baseSetID);
@@ -407,14 +409,14 @@ function WardrobeSetsDataProviderMixin:IsBaseSetNew(baseSetID)
   return baseSetData.newStatus;
 end
 
-function WardrobeSetsDataProviderMixin:ResetBaseSetNewStatus(baseSetID)
+function MyDataProvider:ResetBaseSetNewStatus(baseSetID)
   local baseSetData = self:GetBaseSetData(baseSetID)
   if ( baseSetData ) then
     baseSetData.newStatus = nil;
   end
 end
 
-function WardrobeSetsDataProviderMixin:GetSortedSetSources(setID)
+function MyDataProvider:GetSortedSetSources(setID)
   local returnTable = { };
   local sourceData = self:GetSetSourceData(setID);
   for sourceID, collected in pairs(sourceData.sources) do
@@ -436,11 +438,11 @@ function WardrobeSetsDataProviderMixin:GetSortedSetSources(setID)
   return returnTable;
 end
 
-function WardrobeSetsDataProviderMixin:IsSetCollected(set)
+function MyDataProvider:IsSetCollected(set)
   return set.collected
 end
   
-function WardrobeSetsDataProviderMixin:ClearSets()
+function MyDataProvider:ClearSets()
   self.baseSets = nil;
   self.baseSetsData = nil;
   self.variantSets = nil;
@@ -449,19 +451,19 @@ function WardrobeSetsDataProviderMixin:ClearSets()
   self.collectedData = nil;
 end
 
-function WardrobeSetsDataProviderMixin:ClearBaseSets()
+function MyDataProvider:ClearBaseSets()
   self.baseSets = nil;
 end
 
-function WardrobeSetsDataProviderMixin:ClearVariantSets()
+function MyDataProvider:ClearVariantSets()
   self.variantSets = nil;
 end
 
-function WardrobeSetsDataProviderMixin:ClearUsableSets()
+function MyDataProvider:ClearUsableSets()
   self.usableSets = nil;
 end
 
-function WardrobeSetsDataProviderMixin:GetIconForSet(setID)
+function MyDataProvider:GetIconForSet(setID)
   local sourceData = self:GetSetSourceData(setID);
   if ( not sourceData.icon ) then
     local sortedSources = self:GetSortedSetSources(setID);
@@ -475,7 +477,7 @@ function WardrobeSetsDataProviderMixin:GetIconForSet(setID)
   return sourceData.icon;
 end
 
-function WardrobeSetsDataProviderMixin:DetermineFavorites()
+function MyDataProvider:DetermineFavorites()
   -- if a variant is favorited, so is the base set
   -- keep track of which set is favorited
   local baseSets = self:GetBaseSets();
@@ -498,13 +500,13 @@ function WardrobeSetsDataProviderMixin:DetermineFavorites()
   end
 end
 
-function WardrobeSetsDataProviderMixin:RefreshFavorites()
+function MyDataProvider:RefreshFavorites()
   self.baseSets = nil;
   self.variantSets = nil;
   self:DetermineFavorites();
 end
 
-local SetsDataProvider = CreateFromMixins(WardrobeSetsDataProviderMixin);
+local SetsDataProvider = CreateFromMixins(MyDataProvider);
 
 --[[
 name: name
@@ -539,27 +541,6 @@ function ArrayToString(array)
     result = result .. (result == "" and "" or ", ") .. j;
   end
   return result
-end
-
-function GetClassForSet(set)
-  --[[
-  Returns the set's class. If it belongs to more than one class,
-  return an empty string.
-
-  This is done based on the player's sex.
-  Player's sex
-  1 = Neutrum / Unknown
-  2 = Male
-  3 = Female
-  ]]
-  local playerSex = UnitSex("player")
-  local className
-  if playerSex == 2 then
-    className = LOCALIZED_CLASS_NAMES_MALE[classConstants[set.classMask]]
-  else
-    className = LOCALIZED_CLASS_NAMES_FEMALE[classConstants[set.classMask]]
-  end
-  return className or ""
 end
 
 local allSets = {}
@@ -727,6 +708,16 @@ function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
     self.DetailsFrame.VariantSetsButton:SetText(setInfo.description);
   end
   
+  -- class drop down
+  if self.DetailsFrame.ClassChoiceButton then
+    if (classConstants[setInfo.classMask]) then
+      self.DetailsFrame.ClassChoiceButton:Show()
+    else
+      self.DetailsFrame.ClassChoiceButton:Hide()
+    end
+  end
+  
+  -- debug string
   if options.interfaceShowDetailsDebugText then
     self.DetailsFrame.DebugString:SetText(
       'ID: ' .. setInfo.setID .. '\n' ..
@@ -783,7 +774,7 @@ function MyWardrobeSetsCollectionScrollFrameMixin_Update(self)
       button:Show();
       button.Name:SetText(baseSet.name);
       local topSourcesCollected, topSourcesTotal = SetsDataProvider:GetSetSourceTopCounts(baseSet.setID);
-      local setCollected = C_TransmogSets.IsBaseSetCollected(baseSet.setID);
+      local setCollected = topSourcesCollected == topSourcesTotal
       local color = IN_PROGRESS_FONT_COLOR;
       if ( setCollected ) then
         color = NORMAL_FONT_COLOR;
@@ -846,6 +837,19 @@ function MyFilterDropDown_Inizialize(self, level)
   elseif ( WardrobeCollectionFrame.activeFrame.searchType == LE_TRANSMOG_SEARCH_TYPE_BASE_SETS ) then
     MyFilterDropDown_InitializeBaseSets(self, level);
   end
+end
+
+function UI_DecorateDropDownItemForClass(info, class)
+  local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
+  local texCoords = CLASS_ICON_TCOORDS[class]      
+  
+  info.text = classNames[class]
+  info.icon = 'Interface\\TargetingFrame\\UI-Classes-Circles'
+  info.tCoordLeft = texCoords[1]
+  info.tCoordRight = texCoords[2]
+  info.tCoordTop = texCoords[3]
+  info.tCoordBottom = texCoords[4]
+  info.colorCode = '|c' .. RAID_CLASS_COLORS[class].colorStr
 end
 
 function MyFilterDropDown_InitializeBaseSets(self, level)
@@ -947,18 +951,9 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       info.isNotRadio = true;
       info.notCheckable = false;
     
-      local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
-    
       -- for each class we build the checkbox button to enable its sets
       for m,c in pairs(classConstants) do
-        local texCoords = CLASS_ICON_TCOORDS[c.name]      
-        info.text = classNames[c.name]
-        info.icon = 'Interface\\TargetingFrame\\UI-Classes-Circles'
-        info.tCoordLeft = texCoords[1]
-        info.tCoordRight = texCoords[2]
-        info.tCoordTop = texCoords[3]
-        info.tCoordBottom = texCoords[4]
-        info.colorCode = '|c' .. RAID_CLASS_COLORS[c.name].colorStr
+        UI_DecorateDropDownItemForClass(info, c.name)
             
         info.checked = function() return BitWiseOperation(options.filterClassMask, m, AND) ~= 0 end
         info.func = function() 
@@ -1069,7 +1064,50 @@ end
 
 local function EnhanceBlizzardUI()
   local DetailsFrame = WardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame
+ 
+  -- Class choice drop down button
+  DetailsFrame.ClassChoiceButton = CreateFrame("button", 'ClassChoiceButton', DetailsFrame, 'UIMenuButtonStretchTemplate')
+  DetailsFrame.ClassChoiceButton:SetSize(108, 22)
+  DetailsFrame.ClassChoiceButton:SetPoint("TOPLEFT", 6, -6)
+  DetailsFrame.ClassChoiceButton:SetScript('OnClick', function()
+		PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON);
+		ToggleDropDownMenu(1, nil, DetailsFrame.ClassChoiceDropDown, DetailsFrame.ClassChoiceButton:GetName(), 0, 1);
+  end)
+
+  local triangleIcon = DetailsFrame.ClassChoiceButton:CreateTexture(nil, "ARTWORK")
+  triangleIcon:SetPoint('LEFT', DetailsFrame.ClassChoiceButton, 'LEFT', 5, -2)
+  triangleIcon:SetAtlas('friendslist-categorybutton-arrow-down', true)
+  printTable(triangleIcon)
   
+  -- Class choice drop down
+  do
+    DetailsFrame.ClassChoiceDropDown = CreateFrame("frame", nil, UIParent, "UIDropDownMenuTemplate")
+    UIDropDownMenu_SetWidth(DetailsFrame.ClassChoiceDropDown, 200)
+    
+    local initialization = function(self, level)
+      local info = UIDropDownMenu_CreateInfo()
+      
+      for m,c in pairs(classConstants) do
+        UI_DecorateDropDownItemForClass(info, c.name)
+            
+        info.checked = function() 
+          local setID = WardrobeCollectionFrame.SetsCollectionFrame:GetSelectedSetID()
+          local setInfo = C_TransmogSets.GetSetInfo(setID)
+          return classConstants[setInfo.classMask] ~= nil
+        end
+          
+        info.func = function() 
+          refresh()
+        end
+        UIDropDownMenu_AddButton(info, level)  
+      end
+    end
+        
+    UIDropDownMenu_Initialize(DetailsFrame.ClassChoiceDropDown, initialization, "MENU")
+  end
+  
+   
+  -- Debug String  
   DetailsFrame.DebugString = DetailsFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   DetailsFrame.DebugString:SetJustifyH("LEFT")
   DetailsFrame.DebugString:SetSize(100,100)
@@ -1205,7 +1243,7 @@ local function onEvent(self, event, ...)
       WardrobeCollectionFrame.SetsCollectionFrame['OnSearchUpdate'] = MyWardrobeSetsCollectionMixin_OnSearchUpdate
 
       -- WardrobeCollectionFrame.searchBox
-      printTable(WardrobeCollectionFrame.FilterDropDown)
+      -- printTable(WardrobeCollectionFrame.FilterDropDown)
         
       -- Replacing initialization of filter drop down menu with our own custom function
       UIDropDownMenu_Initialize(WardrobeCollectionFrame.FilterDropDown, MyFilterDropDown_Inizialize, "MENU")
