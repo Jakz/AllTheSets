@@ -1,3 +1,18 @@
+--[[
+name: name
+label: text under name
+description: type (normal, heroic, gladiator etc)
+hiddenUntilCollected
+setID: unique ID
+expansionID: expansionID (see above)
+classMask: allowed classes (see above)
+collected: true/false
+uiOrder: order in list, higher value = higher in list
+favorite: true/false
+baseSetID: unique ID of referring set (eg heroic refers to normal)
+requiredFaction: Horde/Alliance/nil
+]]
+
 ----------------------
 -- HELPER FUNCTIONS
 ----------------------
@@ -224,7 +239,8 @@ function MyDataProvider:IsMatching(searchText, set)
     (not set.label:match("Season") and options.filterShowPvE)
 
   
-  -- return set.setID == 435
+  -- return set.setID == 818
+  --return set.label == 'Firelands'
     
   -- this is the main filtering function which takes into account all the options set in the frame
   if ((options.filterShowCollected and isCollected) or
@@ -249,8 +265,23 @@ function MyDataProvider:IsMatching(searchText, set)
   return false
 end
 
-function MyDataProvider:GetBaseSets()
+function MyDataProvider:CacheSets()
+  if (not self.sets) then
+    self.sets = { }
+  end
+  
+  C_TransmogCollection.ClearSearch(2)
+  local allSets = C_TransmogSets.GetAllSets();
+  
+  for i, set in ipairs(allSets) do
+    self.sets[set.setID] = set
+  end
+
+end
+
+function MyDataProvider:GetBaseSets()  
   if ( not self.baseSets ) then
+    debug(true, 'caching sets')
     self.baseSets = {}
     C_TransmogCollection.ClearSearch(2)
     
@@ -274,11 +305,25 @@ function MyDataProvider:GetBaseSets()
     
     -- compute variants list by storing all sets which has baseSetID of a matching set
     for i, set in ipairs(allSets) do     
-      if validIDs[set.baseSetID] ~= nil then
+      -- if validIDs[set.baseSetID] ~= nil then
+      if set.baseSetID then
         if not self.variantSets[set.baseSetID] then
           self.variantSets[set.baseSetID] = { validIDs[set.baseSetID] }
         end
         self.variantSets[set.baseSetID][#self.variantSets[set.baseSetID] + 1] = set      
+      end
+      -- end
+    end
+    
+    -- compute all sets which exist for multiple classes by using the label description to match them
+    self.setsByPlace = { }  
+    for i, set in ipairs(allSets) do
+      if set.label and not set.baseSetID then
+        if not self.setsByPlace[set.label] then
+          self.setsByPlace[set.label] = { }
+        end
+      
+        self.setsByPlace[set.label][#self.setsByPlace[set.label] + 1] = set
       end
     end
     
@@ -288,22 +333,29 @@ function MyDataProvider:GetBaseSets()
         return s1.uiOrder < s2.uiOrder
       end)
     end
-    
+            
     self:DetermineFavorites();
     self:SortSets(self.baseSets);
   end
   return self.baseSets;
 end
 
+function MyDataProvider:GetSetsByPlace(label)
+  if not self.setsByPlace then
+    self:GetBaseSets()
+  end
+  return self.setsByPlace[label] or { }
+end
+
 function MyDataProvider:GetBaseSetByID(baseSetID)
   local baseSets = self:GetBaseSets();
   for i = 1, #baseSets do
-    debug(true, 'getting base set for ' .. baseSetID)
+    debug(false, 'getting base set for ' .. baseSetID)
     if ( baseSets[i].setID == baseSetID ) then
       return baseSets[i], i;
     end
   end
-  debug(true, 'failed to find base set for ' .. baseSetID)
+  debug(false, 'failed to find base set for ' .. baseSetID)
   return nil, nil;
 end
 
@@ -313,6 +365,33 @@ function MyDataProvider:GetVariantSets(baseSetID)
   end
 
   return self.variantSets[baseSetID] or { };
+end
+
+function MyDataProvider:GetAllSourcesData(setID)
+  local isources = C_TransmogSets.GetSetSources(setID);
+  
+  local data = {}
+  
+  -- for each set source
+  for source,_ in pairs(isources) do
+    -- we get all equivalent appearances for that item
+    local info = C_TransmogCollection.GetSourceInfo(source)
+    local allSourcesForItem = C_TransmogCollection.GetAllAppearanceSources(info.visualID)
+    local sourceData = { #allSourcesForItem, 0}
+    
+    -- for all such appearances we count how many are collected and the total
+    for k,v in pairs(allSourcesForItem) do
+      local singleSourceInfo = C_TransmogCollection.GetSourceInfo(v)
+    
+      if singleSourceInfo.isCollected then
+        sourceData[2] = sourceData[2] + 1
+      end
+    end
+    
+    data[#data + 1] = sourceData
+  end
+  
+  return data
 end
 
 function MyDataProvider:GetSetSourceData(setID)
@@ -328,8 +407,20 @@ function MyDataProvider:GetSetSourceData(setID)
     -- GetSetSources returns always false if the current class can't equip the item
     -- that's why we need to use GetSourceInfo for real value
     for source,_ in pairs(isources) do
+      --[[local info = C_TransmogCollection.GetSourceInfo(source)
+      sources[source] = info.isCollected]]
       local info = C_TransmogCollection.GetSourceInfo(source)
-      sources[source] = info.isCollected
+       local allSourcesForItem = C_TransmogCollection.GetAllAppearanceSources(info.visualID)
+   
+       sources[source] = false
+       for k,v in pairs(allSourcesForItem) do
+      
+          local singleSourceInfo = C_TransmogCollection.GetSourceInfo(v)
+      
+          if singleSourceInfo.isCollected then
+             sources[source] = true
+          end
+       end
     end
     
     local numCollected = 0;
@@ -443,11 +534,16 @@ function MyDataProvider:IsSetCollected(set)
 end
   
 function MyDataProvider:ClearSets()
+  debug(true, 'clearing sets')
+  
   self.baseSets = nil;
   self.baseSetsData = nil;
   self.variantSets = nil;
   self.usableSets = nil;
   self.sourceData = nil;
+  self.setsByPlace = nil;
+  
+  
   self.collectedData = nil;
 end
 
@@ -500,30 +596,7 @@ function MyDataProvider:DetermineFavorites()
   end
 end
 
-function MyDataProvider:RefreshFavorites()
-  self.baseSets = nil;
-  self.variantSets = nil;
-  self:DetermineFavorites();
-end
-
 local SetsDataProvider = CreateFromMixins(MyDataProvider);
-
---[[
-name: name
-label: text under name
-description: type (normal, heroic, gladiator etc)
-hiddenUntilCollected
-setID: unique ID
-expansionID: expansionID (see above)
-classMask: allowed classes (see above)
-collected: true/false
-uiOrder: order in list, higher value = higher in list
-favorite: true/false
-baseSetID: unique ID of referring set (eg heroic refers to normal)
-requiredFaction: Horde/Alliance/nil
-]]
-
-
 
 function ConvertClassBitMaskToStringArray(bitmask)
   local result = {}
@@ -710,8 +783,16 @@ function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
   
   -- class drop down
   if self.DetailsFrame.ClassChoiceButton then
-    if (classConstants[setInfo.classMask]) then
+    local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
+    if (setsForPlace and #setsForPlace > 1) then
       self.DetailsFrame.ClassChoiceButton:Show()
+      
+      local class = classConstants[setInfo.classMask].name
+      local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
+      local color = RAID_CLASS_COLORS[class]
+      
+      self.DetailsFrame.ClassChoiceButton:SetText(classNames[class])
+      self.DetailsFrame.ClassChoiceButton:GetFontString():SetTextColor(color.r, color.g, color.b, 1.0)
     else
       self.DetailsFrame.ClassChoiceButton:Hide()
     end
@@ -719,12 +800,22 @@ function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
   
   -- debug string
   if options.interfaceShowDetailsDebugText then
-    self.DetailsFrame.DebugString:SetText(
-      'ID: ' .. setInfo.setID .. '\n' ..
-      'baseID: ' .. baseSetID .. '\n' ..
-      'variants: ' .. #variantSets .. '\n' ..
-      'uiOrder: ' .. setInfo.uiOrder
-    )
+    local sources = SetsDataProvider:GetSortedSetSources(setID);
+    local sourceData = MyDataProvider:GetAllSourcesData(setID);
+ 
+    local string = 
+    'ID: ' .. setInfo.setID .. '\n' ..
+    'baseID: ' .. baseSetID .. '\n' ..
+    'variants: ' .. #variantSets .. '\n' ..
+    'uiOrder: ' .. setInfo.uiOrder .. '\n' ..
+    'pieces: ' .. #sourceData .. '\n' ..
+    'sources: '
+    
+    for _,data in ipairs(sourceData) do
+      string = string .. ' ' .. (data[2] > 0 and '|cff80ff80' or '|cffff8080') .. data[1]
+    end
+    
+    self.DetailsFrame.DebugString:SetText(string)
     self.DetailsFrame.DebugString:Show()
   else
     self.DetailsFrame.DebugString:Hide()
@@ -1077,29 +1168,40 @@ local function EnhanceBlizzardUI()
   local triangleIcon = DetailsFrame.ClassChoiceButton:CreateTexture(nil, "ARTWORK")
   triangleIcon:SetPoint('LEFT', DetailsFrame.ClassChoiceButton, 'LEFT', 5, -2)
   triangleIcon:SetAtlas('friendslist-categorybutton-arrow-down', true)
-  printTable(triangleIcon)
   
-  -- Class choice drop down
+  -- Class choice drop down menu
   do
     DetailsFrame.ClassChoiceDropDown = CreateFrame("frame", nil, UIParent, "UIDropDownMenuTemplate")
     UIDropDownMenu_SetWidth(DetailsFrame.ClassChoiceDropDown, 200)
     
     local initialization = function(self, level)
       local info = UIDropDownMenu_CreateInfo()
+      info.keepShownOnClick = false
       
+      local setID = WardrobeCollectionFrame.SetsCollectionFrame:GetSelectedSetID()
+      local setInfo = C_TransmogSets.GetSetInfo(setID)
+      local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
       for m,c in pairs(classConstants) do
-        UI_DecorateDropDownItemForClass(info, c.name)
+        local setForClass = nil
+        for _,s in pairs(setsForPlace) do
+          if m == s.classMask then
+            setForClass = s
+          end
+        end
+        
+        if setForClass then        
+          UI_DecorateDropDownItemForClass(info, c.name)
             
-        info.checked = function() 
-          local setID = WardrobeCollectionFrame.SetsCollectionFrame:GetSelectedSetID()
-          local setInfo = C_TransmogSets.GetSetInfo(setID)
-          return classConstants[setInfo.classMask] ~= nil
-        end
+          info.checked = function() 
+            return setInfo.classMask == m
+          end
           
-        info.func = function() 
-          refresh()
+          info.func = function() 
+            WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(setForClass.setID)
+            refresh()
+          end
+          UIDropDownMenu_AddButton(info, level)          
         end
-        UIDropDownMenu_AddButton(info, level)  
       end
     end
         
@@ -1110,7 +1212,7 @@ local function EnhanceBlizzardUI()
   -- Debug String  
   DetailsFrame.DebugString = DetailsFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   DetailsFrame.DebugString:SetJustifyH("LEFT")
-  DetailsFrame.DebugString:SetSize(100,100)
+  DetailsFrame.DebugString:SetSize(200,100)
   DetailsFrame.DebugString:SetPoint("BOTTOMLEFT", 10, 0)
 end
 
