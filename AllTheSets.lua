@@ -48,6 +48,28 @@ function debug(always, text)
   end
 end
 
+local ALL_CLASSES_MASK = 0xFFF
+local NO_CLASSES_MASK = 0x000
+local PLATE_CLASSES_MASK = 0x001 + 0x002 + 0x020
+local MAIL_CLASSES_MASK = 0x004 + 0x040
+local LEATHER_CLASSES_MASK = 0x008 + 0x200 + 0x400 + 0x800
+local CLOTH_CLASSES_MASK = 0x010 + 0x080 + 0x100
+
+local armorClassConstants = { -- TODO: localize
+  [PLATE_CLASSES_MASK] = {
+    name = 'Plate'
+  }, 
+  [MAIL_CLASSES_MASK] = {
+    name = 'Mail'
+  },
+  [LEATHER_CLASSES_MASK] = {
+    name = 'Leather'
+  },
+  [CLOTH_CLASSES_MASK] = {
+    name = 'Cloth'
+  } 
+}
+
 local classConstants = {
   [0x001] = 
   {
@@ -144,9 +166,6 @@ local EXPANSION_TABLE = {
 
 for _,v in pairs(EXPANSION_TABLE) do v.mask = BitwiseLeftShift(1, v.ident) end
 
-local ALL_CLASSES_MASK = 0xFFF
-local NO_CLASSES_MASK = 0x000
-
 local ALL_EXPANSIONS_MASK = 0xFF
 local NO_EXPANSIONS_MASK = 0x00
 
@@ -156,9 +175,15 @@ local SET_PROGRESS_BAR_MAX_WIDTH = 204;
 local IN_PROGRESS_FONT_COLOR = CreateColor(0.251, 0.753, 0.251);
 local IN_PROGRESS_FONT_COLOR_CODE = "|cff40c040";
 
-local MOUNT_FACTION_TEXTURES = {
-	['Horde'] = "MountJournalIcons-Horde",
-	['Alliance'] = "MountJournalIcons-Alliance"
+local FACTION_CONSTANTS = {
+	['Horde'] = {
+    icon = "MountJournalIcons-Horde",
+    color = '|cffff2216'
+  },
+	['Alliance'] = {
+    icon = "MountJournalIcons-Alliance",
+    color = '|cff64a0d3'
+  }
 };
 
 local options = {
@@ -177,10 +202,14 @@ local options = {
   
   interfaceShowClassIconsInList = true,
   interfaceShowFactionIconInList = true,
-  interfaceUseClassColorForCollectedSets = true,
+  interfaceUseClassColorsWhereUseful = true,
   
   interfaceShowDetailsDebugText = true
 };
+
+function AllTheSetsGetOptions()
+  return options
+end
 
 local function ResetSearchFilter()
   options.filterShowCollected = true
@@ -250,8 +279,14 @@ function MyDataProvider:CacheSets()
       self.sets[set.setID] = set
       count = count + 1
     
-      -- we set singleClass as the class name for the set if available
+      -- we set singleClass as the class for the set if available
       set.singleClass = classConstants[set.classMask]      
+      -- otherwise we set armorClass as the the entry for the set if available
+      set.armorClass = armorClassConstants[set.classMask]
+      
+      if set.classMask ~= 0 and not set.singleClass and not set.armorClass then
+        debug(true, 'Set ' .. set.setID .. ' ' .. set.name .. ' has a wrong class specificaton (' .. set.classMask .. ')')
+      end
     end
     
     debug(true, 'cached ' .. count .. ' sets')
@@ -263,7 +298,7 @@ function MyDataProvider:CacheSets()
     for i, set in pairs(self.sets) do     
       if set.baseSetID then
         if not self.variantSets[set.baseSetID] then
-          self.variantSets[set.baseSetID] = { set }
+          self.variantSets[set.baseSetID] = { self.sets[baseSetID] }
         end
         self.variantSets[set.baseSetID][#self.variantSets[set.baseSetID] + 1] = set      
       end
@@ -377,6 +412,11 @@ function MyDataProvider:GetSets()
     self:CacheSets() 
   end
   return self.sets;
+end
+
+function MyDataProvider:GetSetInfo(setID)
+  local sets = self:GetSets()
+  return sets[setID]
 end
 
 function MyDataProvider:GetAllSourcesData(setID)
@@ -514,13 +554,6 @@ function MyDataProvider:IsBaseSetNew(baseSetID)
   return baseSetData.newStatus;
 end
 
-function MyDataProvider:ResetBaseSetNewStatus(baseSetID)
-  local baseSetData = self:GetBaseSetData(baseSetID)
-  if ( baseSetData ) then
-    baseSetData.newStatus = nil;
-  end
-end
-
 function MyDataProvider:GetSortedSetSources(setID)
   local returnTable = { };
   local sourceData = self:GetSetSourceData(setID);
@@ -604,25 +637,25 @@ end
 
 local SetsDataProvider = CreateFromMixins(MyDataProvider);
 
-function ConvertClassBitMaskToStringArray(bitmask)
-  local result = {}
-  for i,j in pairs(classConstants) do
+local function ClassMaskToString(bitmask, colorized)
+  local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
+
+  local result = ''
+  for i, class in pairs(classConstants) do
     if BitWiseOperation(bitmask, i, AND) ~= 0 then
-      result[#result+1] = j
+      local name = classNames[class.name]
+      
+      if colorized then
+        result = result .. (result == '' and '' or "|cffffffff, ") .. '|c' .. RAID_CLASS_COLORS[class.name].colorStr .. name;
+      else
+        result = result .. (result == '' and "" or ", ") .. name;
+      end
     end
   end
   return result
 end
 
-function ArrayToString(array)
-  local result = "";
-  for i,j in pairs(array) do
-    result = result .. (result == "" and "" or ", ") .. j;
-  end
-  return result
-end
-
-function MyWardrobeSetsCollectionMixin_SelectSet(self, setID)
+local function MyWardrobeSetsCollectionMixin_SelectSet(self, setID)
   debug(true, 'selecting set ' .. setID)
   
   self.selectedSetID = setID;
@@ -636,7 +669,7 @@ function MyWardrobeSetsCollectionMixin_SelectSet(self, setID)
   self:Refresh();
 end
 
-function MyWardrobeSetsCollectionMixin_GetDefaultSetIDForBaseSet(self, baseSetID)
+local function MyWardrobeSetsCollectionMixin_GetDefaultSetIDForBaseSet(self, baseSetID)
   if ( SetsDataProvider:IsBaseSetNew(baseSetID) ) then
     if ( C_TransmogSets.SetHasNewSources(baseSetID) ) then
       return baseSetID;
@@ -674,15 +707,17 @@ function MyWardrobeSetsCollectionMixin_GetDefaultSetIDForBaseSet(self, baseSetID
 end
 
 
-function MyWardrobeSetsCollectionMixin_OnSearchUpdate(self)
+local function MyWardrobeSetsCollectionMixin_OnSearchUpdate(self)
   if ( self.init ) then
     SetsDataProvider:ClearFilteredSets();
     self:Refresh();
   end
 end
 
-function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
-  local setInfo = (setID and C_TransmogSets.GetSetInfo(setID)) or nil;
+local DETAILS_TITLE_COLOR = CreateColor(1, 0.82, 0)
+
+local function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
+  local setInfo = SetsDataProvider:GetSetInfo(setID)
   
   if not setInfo then
     self.DetailsFrame:Hide();
@@ -694,7 +729,14 @@ function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
   end
 
   self.DetailsFrame.Name:SetText(setInfo.name);
-  
+    
+  if options.interfaceUseClassColorsWhereUseful and setInfo.singleClass then
+    local color = RAID_CLASS_COLORS[setInfo.singleClass.name]
+    self.DetailsFrame.Name:SetTextColor(color.r, color.g, color.b)
+  else
+    self.DetailsFrame.Name:SetTextColor(DETAILS_TITLE_COLOR.r, DETAILS_TITLE_COLOR.g, DETAILS_TITLE_COLOR.b)
+  end
+    
   if self.DetailsFrame.Name:IsTruncated() then
     self.DetailsFrame.Name:Hide();
     self.DetailsFrame.LongName:SetText(setInfo.name);
@@ -770,12 +812,18 @@ function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
     if (setsForPlace and #setsForPlace > 1) then
       self.DetailsFrame.ClassChoiceButton:Show()
       
-      local class = classConstants[setInfo.classMask].name
-      local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
-      local color = RAID_CLASS_COLORS[class]
+      assert(setInfo.singleClass or setInfo.armorClass, "grouped set entry doesn't have a class or an armor class specified")
       
-      self.DetailsFrame.ClassChoiceButton:SetText(classNames[class])
-      self.DetailsFrame.ClassChoiceButton:GetFontString():SetTextColor(color.r, color.g, color.b, 1.0)
+      if (setInfo.singleClass) then
+        local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
+        local color = RAID_CLASS_COLORS[setInfo.singleClass.name]
+      
+        self.DetailsFrame.ClassChoiceButton:SetText(classNames[setInfo.singleClass.name])
+        self.DetailsFrame.ClassChoiceButton:GetFontString():SetTextColor(color.r, color.g, color.b, 1.0)
+      else
+        self.DetailsFrame.ClassChoiceButton:SetText(setInfo.armorClass.name)
+        self.DetailsFrame.ClassChoiceButton:GetFontString():SetTextColor(1.0, 1.0, 1.0, 1.0)
+      end
     else
       self.DetailsFrame.ClassChoiceButton:Hide()
     end
@@ -792,10 +840,24 @@ function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
     'variants: ' .. #variantSets .. '\n' ..
     'uiOrder: ' .. setInfo.uiOrder .. '\n' ..
     'pieces: ' .. #sourceData .. '\n' ..
-    'sources: '
+    'sources: ' 
     
     for _,data in ipairs(sourceData) do
       string = string .. ' ' .. (data[2] > 0 and '|cff80ff80' or '|cffff8080') .. data[1]
+    end
+    
+    string = string .. '\n|cffffffffclassMask: ' .. setInfo.classMask .. '\n'
+    string = string .. '|cffffffffclasses: ' .. ClassMaskToString(setInfo.classMask, true) .. '\n'
+    
+    local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
+    if (setsForPlace and #setsForPlace > 1) then
+      string = string .. '|cffffffffgroup: ' .. setInfo.label .. ' (' .. #setsForPlace .. ')\n'
+    else
+      string = string .. '|cffffffffgroup: none\n'
+    end
+    
+    if (setInfo.requiredFaction) then
+      string = string .. '|cfffffffffaction: ' .. FACTION_CONSTANTS[setInfo.requiredFaction].color .. setInfo.requiredFaction.. '\n'
     end
     
     self.DetailsFrame.DebugString:SetText(string)
@@ -805,7 +867,7 @@ function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
   end
 end
 
-function MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown()
+local function MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown()
   local selectedSetID = WardrobeCollectionFrame.SetsCollectionFrame:GetSelectedSetID();
   if ( not selectedSetID ) then
     return;
@@ -813,8 +875,7 @@ function MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown()
   local info = UIDropDownMenu_CreateInfo();
   local baseSetID = C_TransmogSets.GetBaseSetID(selectedSetID);
   local variantSets = SetsDataProvider:GetVariantSets(baseSetID);
-  for i = 1, #variantSets do
-    local variantSet = variantSets[i];
+  for _, variantSet in pairs(variantSets) do
     local numSourcesCollected, numSourcesTotal = SetsDataProvider:GetSetSourceCounts(variantSet.setID);
     local colorCode = IN_PROGRESS_FONT_COLOR_CODE;
     if ( numSourcesCollected == numSourcesTotal ) then
@@ -823,13 +884,13 @@ function MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown()
       colorCode = GRAY_FONT_COLOR_CODE;
     end
     info.text = format(ITEM_SET_NAME, variantSet.description..colorCode, numSourcesCollected, numSourcesTotal);
-    info.checked = (variantSet.setID == selectedSetID);
+    info.checked = function() return variantSet.setID == selectedSetID end;
     info.func = function() WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(variantSet.setID); end;
     UIDropDownMenu_AddButton(info);
   end
 end
 
-function MyWardrobeSetsCollectionScrollFrameMixin_Update(self)
+local function RedrawList(self)
   -- local self = WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame
   
   local offset = HybridScrollFrame_GetOffset(self);
@@ -851,22 +912,33 @@ function MyWardrobeSetsCollectionScrollFrameMixin_Update(self)
       local setCollected = topSourcesCollected == topSourcesTotal
       local color;
       
-      if options.interfaceUseClassColorForCollectedSets then
-        if (topSourcesCollected > 0) then
-          color = classConstants[baseSet.classMask] and RAID_CLASS_COLORS[classConstants[baseSet.classMask].name] or IN_PROGRESS_FONT_COLOR
+      if options.interfaceUseClassColorsWhereUseful then
+        --if (topSourcesCollected > 0) then
+        if (baseSet.singleClass) then
+          color = RAID_CLASS_COLORS[baseSet.singleClass.name]
         else
-          color = GRAY_FONT_COLOR
+          color = IN_PROGRESS_FONT_COLOR
+        end
+
+        if topSourcesCollected == 0 then
+          color.a = 0.3
+        elseif not setCollected then
+          color.a = 0.7 -- + 0.2 * (topSourcesCollected / topSourcesTotal)
+        else
+          color.a = 1.0
         end
       else      
         if (setCollected) then
           color = NORMAL_FONT_COLOR
         elseif (topSourcesCollected == 0) then
           color = GRAY_FONT_COLOR
+        else
+          color = IN_PROGRESS_FONT_COLOR       
         end
       end
    
       if options.interfaceShowClassIconsInList then
-        local setClass = classConstants[baseSet.classMask]
+        local setClass = baseSet.singleClass
       
         if setClass then
           local texCoords = CLASS_ICON_TCOORDS[setClass.name]      
@@ -879,7 +951,7 @@ function MyWardrobeSetsCollectionScrollFrameMixin_Update(self)
       end
       
       if options.interfaceShowFactionIconInList then
-        local iconName = MOUNT_FACTION_TEXTURES[baseSet.requiredFaction]
+        local iconName = FACTION_CONSTANTS[baseSet.requiredFaction] and FACTION_CONSTANTS[baseSet.requiredFaction].icon
         
         if iconName then
   				button.FactionIcon:SetAtlas(iconName, true);
@@ -890,7 +962,7 @@ function MyWardrobeSetsCollectionScrollFrameMixin_Update(self)
       end
       
       
-      button.Name:SetTextColor(color.r, color.g, color.b);
+      button.Name:SetTextColor(color.r, color.g, color.b, color.a);
       button.Label:SetText(baseSet.label);
       button.Icon:SetTexture(SetsDataProvider:GetIconForSet(baseSet.setID));
       button.Icon:SetDesaturation((topSourcesCollected == 0) and 1 or 0);
@@ -899,7 +971,7 @@ function MyWardrobeSetsCollectionScrollFrameMixin_Update(self)
       button.New:SetShown(SetsDataProvider:IsBaseSetNew(baseSet.setID));
       button.setID = baseSet.setID;
 
-      if ( topSourcesCollected == 0 or setCollected ) then
+      if (topSourcesCollected == 0 or setCollected) then
         button.ProgressBar:Hide();
       else
         button.ProgressBar:Show();
@@ -917,7 +989,7 @@ function MyWardrobeSetsCollectionScrollFrameMixin_Update(self)
 end
 
 
-function MyFilterDropDown_Inizialize(self, level)
+local function MyFilterDropDown_Inizialize(self, level)
   -- like original function but we call MyFilterDropDown_InitializeBaseSets for sets drop down
   
   debug(true, "initialize dropdown ", level)
@@ -932,7 +1004,7 @@ function MyFilterDropDown_Inizialize(self, level)
   end
 end
 
-function UI_DecorateDropDownItemForClass(info, class)
+local function UI_DecorateDropDownItemForClass(info, class)
   local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
   local texCoords = CLASS_ICON_TCOORDS[class]      
   
@@ -945,12 +1017,13 @@ function UI_DecorateDropDownItemForClass(info, class)
   info.colorCode = '|c' .. RAID_CLASS_COLORS[class].colorStr
 end
 
+local function Refresh()
+  SetsDataProvider:ClearFilteredSets()
+  WardrobeCollectionFrame.SetsCollectionFrame:Refresh()
+end
+
 function MyFilterDropDown_InitializeBaseSets(self, level)
-  local refresh = function()
-    SetsDataProvider:ClearFilteredSets()
-    WardrobeCollectionFrame.SetsCollectionFrame:Refresh()
-  end
-  
+
   local info = UIDropDownMenu_CreateInfo();
   info.keepShownOnClick = true
   
@@ -960,7 +1033,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     info.text = COLLECTED;
     info.func = function(_, _, _, value) 
       options.filterShowCollected = value
-      refresh()
+      Refresh()
     end
     info.checked = options.filterShowCollected
     UIDropDownMenu_AddButton(info, level);
@@ -968,7 +1041,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     info.text = NOT_COLLECTED;
     info.func = function(_, _, _, value) 
       options.filterShowNotCollected = value 
-      refresh()
+      Refresh()
     end
     info.checked = options.filterShowNotCollected
     UIDropDownMenu_AddButton(info, level);
@@ -976,7 +1049,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     info.text = 'PvE';
     info.func = function(_, _, _, value) 
       options.filterShowPvE = value 
-      refresh()
+      Refresh()
     end
     info.checked = options.filterShowPvE
     UIDropDownMenu_AddButton(info, level);
@@ -984,7 +1057,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     info.text = 'PvP';
     info.func = function(_, _, _, value) 
       options.filterShowPvP = value 
-      refresh()
+      Refresh()
     end
     info.checked = options.filterShowPvP
     UIDropDownMenu_AddButton(info, level);
@@ -1018,7 +1091,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     info.text = 'Show hidden by default'; -- TODO: localize
     info.func = function(_, _, _, value) 
       options.filterShowHiddenByDefault = value 
-      refresh()
+      Refresh()
     end
     info.checked = options.filterShowHiddenByDefault
     UIDropDownMenu_AddButton(info, level);
@@ -1029,7 +1102,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     info.func = function(_, _, _, value) 
       ResetSearchFilter();
       UIDropDownMenu_Refresh(self, 1, 1);
-      refresh()
+      Refresh()
     end
     UIDropDownMenu_AddButton(info, level);
     
@@ -1053,7 +1126,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
           else
             options.filterClassMask = options.filterClassMask - m
           end
-          refresh()
+          Refresh()
         end
         UIDropDownMenu_AddButton(info, level)  
       end
@@ -1066,7 +1139,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       info.text = CHECK_ALL
       info.func = function() 
         options.filterClassMask = ALL_CLASSES_MASK
-        refresh()
+        Refresh()
         UIDropDownMenu_Refresh(self, 1, 2);
       
       end
@@ -1076,7 +1149,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       info.text = UNCHECK_ALL
       info.func = function() 
         options.filterClassMask = NO_CLASSES_MASK
-        refresh()
+        Refresh()
         UIDropDownMenu_Refresh(self, 1, 2);
       end
       UIDropDownMenu_AddButton(info, level)  
@@ -1096,7 +1169,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
           else
             options.filterExpansionMask = options.filterExpansionMask - e.mask
           end
-          refresh()
+          Refresh()
         end
         info.checked = function() return BitWiseOperation(options.filterExpansionMask, e.mask, AND) ~= 0 end
         UIDropDownMenu_AddButton(info, level)    
@@ -1110,7 +1183,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       info.text = CHECK_ALL
       info.func = function() 
         options.filterExpansionMask = ALL_EXPANSIONS_MASK
-        refresh()
+        Refresh()
         UIDropDownMenu_Refresh(self, 1, 2);
       
       end
@@ -1120,7 +1193,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       info.text = UNCHECK_ALL
       info.func = function() 
         options.filterExpansionMask = NO_EXPANSIONS_MASK
-        refresh()
+        Refresh()
         UIDropDownMenu_Refresh(self, 1, 2);
       end
       UIDropDownMenu_AddButton(info, level)  
@@ -1136,7 +1209,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       info.checked = function() return options.filterFactionMask.Alliance end
       info.func = function(_, _, _, value) 
         options.filterFactionMask.Alliance = value
-        refresh()
+        Refresh()
       end
       UIDropDownMenu_AddButton(info, level)  
     
@@ -1145,7 +1218,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       info.checked = function() return options.filterFactionMask.Horde end
       info.func = function(_, _, _, value) 
         options.filterFactionMask.Horde = value 
-        refresh()
+        Refresh()
       end
       UIDropDownMenu_AddButton(info, level)  
          
@@ -1164,7 +1237,8 @@ local function EnhanceBlizzardUI()
     local button = buttons[i];
     
     -- Class icon
-    button.ClassIcon = button:CreateTexture(nil, "OVERLAY")
+    button.ClassIcon = button:CreateTexture(nil, "BACKGROUND")
+    button.ClassIcon:SetAlpha(0.5)
     button.ClassIcon:SetPoint("TOPRIGHT", -1, -2);
     button.ClassIcon:SetTexture('Interface\\TargetingFrame\\UI-Classes-Circles')
     button.ClassIcon:SetSize(20, 20)
@@ -1200,29 +1274,23 @@ local function EnhanceBlizzardUI()
       info.keepShownOnClick = false
       
       local setID = WardrobeCollectionFrame.SetsCollectionFrame:GetSelectedSetID()
-      local setInfo = C_TransmogSets.GetSetInfo(setID)
+      local setInfo = SetsDataProvider:GetSetInfo(setID)
       local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
-      for m,c in pairs(classConstants) do
-        local setForClass = nil
-        for _,s in pairs(setsForPlace) do
-          if m == s.classMask then
-            setForClass = s
-          end
+      
+      for _, otherSet in pairs(setsForPlace) do
+        if otherSet.singleClass then
+          UI_DecorateDropDownItemForClass(info, otherSet.singleClass.name)
+        elseif otherSet.armorClass then
+          info.text = otherSet.armorClass.name
+          info.icon = nil
+          info.colorCode = FACTION_CONSTANTS[otherSet.requiredFaction] and FACTION_CONSTANTS[otherSet.requiredFaction].color
         end
-        
-        if setForClass then        
-          UI_DecorateDropDownItemForClass(info, c.name)
-            
-          info.checked = function() 
-            return setInfo.classMask == m
-          end
-          
-          info.func = function() 
-            WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(setForClass.setID)
-            refresh()
-          end
-          UIDropDownMenu_AddButton(info, level)          
+
+        info.checked = function() return setInfo.setID == otherSet.setID end
+        info.func = function() 
+          WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(otherSet.setID)
         end
+        UIDropDownMenu_AddButton(info, level)        
       end
     end
         
@@ -1233,7 +1301,7 @@ local function EnhanceBlizzardUI()
   -- Debug String  
   DetailsFrame.DebugString = DetailsFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   DetailsFrame.DebugString:SetJustifyH("LEFT")
-  DetailsFrame.DebugString:SetSize(200,100)
+  DetailsFrame.DebugString:SetSize(300,200)
   DetailsFrame.DebugString:SetPoint("BOTTOMLEFT", 10, 0)
 end
 
@@ -1247,10 +1315,19 @@ local function onEvent(self, event, ...)
     else
       self:RegisterEvent("ADDON_LOADED")
     end  
+  elseif event == 'PLAYER_LOGOUT' then
+    
+    if not AllTheSetsOptions then
+      AllTheSetsOptions = {}
+    end
+    
+    AllTheSetsOptions.options = options
   elseif (event == "ADDON_LOADED" and select(1, ...) == "AllTheSets") then
-    --[[if ATSRepository == nil then
-      ATSRepository = 'antani'
-    end]]
+    
+    if AllTheSetOptions and AllTheSetsOptions.options then
+      options = AllTheSetsOptions.options
+    end
+    
   elseif (event == "ADDON_LOADED" and select(1, ...) == "Blizzard_Collections") then
     -- self:UnregisterEvent("ADDON_LOADED");
     print "Registering hooks for AllTheSets";
@@ -1267,16 +1344,10 @@ local function onEvent(self, event, ...)
       Blizzard UI sets frame has a design flaw: the data provider for all the sets is an hidden local
       variable which cannot be replaced. This means that all methods of the WadrobeSetsCollectionMixin
       which use SetsDataProvider must be replaced with new method which uses our implementation
-        
-      Things may change if UI code changes but there are the involved methods at the moment:
-      OnShow() (we can HookScript)
-      OnHide() (we can HookScript)
-      DisplaySet(setID)
-          
       ]]        
 
-      WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['update'] = MyWardrobeSetsCollectionScrollFrameMixin_Update
-      WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['Update'] = MyWardrobeSetsCollectionScrollFrameMixin_Update
+      WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['update'] = RedrawList
+      WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['Update'] = RedrawList
         
       EnhanceBlizzardUI()
         
@@ -1291,7 +1362,6 @@ local function onEvent(self, event, ...)
         
       -- Replacing initialization of filter drop down menu with our own custom function
       UIDropDownMenu_Initialize(WardrobeCollectionFrame.FilterDropDown, MyFilterDropDown_Inizialize, "MENU")
-        
       UIDropDownMenu_Initialize(WardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame.VariantSetsDropDown, MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown, "MENU")
         
       print "Showing menu"; 
@@ -1327,9 +1397,10 @@ local function onEvent(self, event, ...)
 end
     
 end
-frame:SetScript("OnEvent", onEvent)
-frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("ADDON_LOADED")
+frame:SetScript('OnEvent', onEvent)
+frame:RegisterEvent('PLAYER_LOGIN')
+frame:RegisterEvent('PLAYER_LOGOUT')
+frame:RegisterEvent('ADDON_LOADED')
 
 
 --[[ local function Neutralizer(box)

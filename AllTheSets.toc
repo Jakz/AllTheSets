@@ -2,6 +2,7 @@
 ## Title: AllTheSets
 ## Author: Jack
 ## Version: 0.1
-## SavedVariables: ATSRepository
+## SavedVariables: AllTheSetsOptions
 
 AllTheSets.lua
+AllTheSets_Config.lua
