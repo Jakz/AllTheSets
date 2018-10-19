@@ -1376,11 +1376,10 @@ local function EnhanceBlizzardUI()
   DetailsFrame.DebugString:SetPoint("BOTTOMLEFT", 10, 0)
 end
 
-
 local frame = CreateFrame("frame", "AllTheSetsFrame");
 local function onEvent(self, event, ...)
   if (event == "PLAYER_LOGIN") then
-    print("AllTheSets 0.1 loaded");   
+    debug(true, "v0.1 loaded");   
     if IsAddOnLoaded("Blizzard_Collections") then
       onEvent(self, "ADDON_LOADED", "Blizzard_Collections");
     else
@@ -1409,7 +1408,7 @@ local function onEvent(self, event, ...)
     ResetSearchFilter()
 
         
-    WardrobeCollectionFrame.SetsCollectionFrame:HookScript("OnShow", 
+    WardrobeCollectionFrame.SetsCollectionFrame:HookScript("OnLoad", 
     function(self) 
       --[[
       Blizzard UI sets frame has a design flaw: the data provider for all the sets is an hidden local
@@ -1435,36 +1434,10 @@ local function onEvent(self, event, ...)
       UIDropDownMenu_Initialize(WardrobeCollectionFrame.FilterDropDown, MyFilterDropDown_Inizialize, "MENU")
       UIDropDownMenu_Initialize(WardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame.VariantSetsDropDown, MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown, "MENU")
         
-      print "Showing menu"; 
     end
   );
     
   WardrobeCollectionFrame.SetsCollectionFrame:HookScript("OnHide", function(self) print "Hiding menu"; end)
-    
-    
-  -- print(WardrobeFilterDropDown);
-    
-  --[[ local info = WardrobeFilterDropDown;
-  info.keepShownOnClick = true;
-  info.isNotRadio = false;
-
-  info.text = 'Warrior';
-  info.checked = true
-    
-  UIDropDownMenu_AddButton(WardrobeFilterDropDown, 1); ]]--
-    
-  --[[ local optionsButton = CreateFrame("Button", nil, WardrobeCollectionFrame)
-  optionsButton:SetPoint("TOPRIGHT", WardrobeCollectionFrameWeaponDropDown, -75, -28)
-  optionsButton:SetSize(31,31)
-  optionsButton:SetScript("OnClick", ButtonOnClick)
-  optionsButton:SetScript("OnEnter", ButtonOnEnter)
-  optionsButton:SetScript("OnLeave", ButtonOnLeave)
-  optionsButton.tooltip = "Options"
-
-  optionsButton.Texture = optionsButton:CreateTexture(nil,"ARTWORK")
-  optionsButton.Texture:SetPoint("CENTER")
-  optionsButton.Texture:SetSize(28,28)
-  optionsButton.Texture:SetAtlas("Class") ]]
 end
     
 end
