@@ -895,7 +895,7 @@ local function MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown()
   end
 end
 
-local function RedrawList(self)
+local function ScrollFrameRedrawList(self)
   -- local self = WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame
   
   local offset = HybridScrollFrame_GetOffset(self);
@@ -907,6 +907,7 @@ local function RedrawList(self)
   local selectedBaseSetID = selectedSetID and C_TransmogSets.GetBaseSetID(selectedSetID);
 
   for i = 1, #buttons do
+    local color;
     local button = buttons[i];
     local setIndex = i + offset;
     if ( setIndex <= #baseSets ) then
@@ -915,7 +916,6 @@ local function RedrawList(self)
       button.Name:SetText(baseSet.name);
       local topSourcesCollected, topSourcesTotal = SetsDataProvider:GetSetSourceTopCounts(baseSet.setID);
       local setCollected = topSourcesCollected == topSourcesTotal
-      local color;
       
       if options.interfaceUseClassColorsWhereUseful then
         --if (topSourcesCollected > 0) then
@@ -1022,7 +1022,7 @@ function InitizalizeRightClickMenu(self)
         variant.favoriteSetID = nil
       end
    
-      RedrawList(WardrobeCollectionFrame.SetsCollectionFrame)
+      ScrollFrameRedrawList(WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame)
 		end
 	else
 		local targetSetID = WardrobeCollectionFrame.SetsCollectionFrame:GetDefaultSetIDForBaseSet(self.baseSetID);
@@ -1039,7 +1039,7 @@ function InitizalizeRightClickMenu(self)
         variant.favoriteSetID = targetSetID
       end
  
-      RedrawList(WardrobeCollectionFrame.SetsCollectionFrame)
+      ScrollFrameRedrawList(WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame)
 		end
 	end
 
@@ -1417,8 +1417,8 @@ local function onEvent(self, event, ...)
       which use SetsDataProvider must be replaced with new method which uses our implementation
       ]]        
 
-      WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['update'] = RedrawList
-      WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['Update'] = RedrawList
+      WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['update'] = ScrollFrameRedrawList
+      WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['Update'] = ScrollFrameRedrawList
         
       EnhanceBlizzardUI()
         
