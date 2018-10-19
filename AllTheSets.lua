@@ -1342,23 +1342,26 @@ local function EnhanceBlizzardUI()
       info.keepShownOnClick = false
       
       local setID = WardrobeCollectionFrame.SetsCollectionFrame:GetSelectedSetID()
-      local setInfo = SetsDataProvider:GetSetInfo(setID)
-      local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
       
-      for _, otherSet in pairs(setsForPlace) do
-        if otherSet.singleClass then
-          UI_DecorateDropDownItemForClass(info, otherSet.singleClass.name, otherSet.requiredFaction)
-        elseif otherSet.armorClass then
-          info.text = otherSet.armorClass.name
-          info.icon = nil
-          info.colorCode = FACTION_CONSTANTS[otherSet.requiredFaction] and FACTION_CONSTANTS[otherSet.requiredFaction].color
-        end
+      if setID then 
+        local setInfo = SetsDataProvider:GetSetInfo(setID)
+        local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
+      
+        for _, otherSet in pairs(setsForPlace) do
+          if otherSet.singleClass then
+            UI_DecorateDropDownItemForClass(info, otherSet.singleClass.name, otherSet.requiredFaction)
+          elseif otherSet.armorClass then
+            info.text = otherSet.armorClass.name
+            info.icon = nil
+            info.colorCode = FACTION_CONSTANTS[otherSet.requiredFaction] and FACTION_CONSTANTS[otherSet.requiredFaction].color
+          end
 
-        info.checked = function() return setInfo.setID == otherSet.setID end
-        info.func = function() 
-          WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(otherSet.setID)
+          info.checked = function() return setInfo.setID == otherSet.setID end
+          info.func = function() 
+            WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(otherSet.setID)
+          end
+          UIDropDownMenu_AddButton(info, level)        
         end
-        UIDropDownMenu_AddButton(info, level)        
       end
     end
         
@@ -1408,34 +1411,30 @@ local function onEvent(self, event, ...)
     ResetSearchFilter()
 
         
-    WardrobeCollectionFrame.SetsCollectionFrame:HookScript("OnLoad", 
-    function(self) 
-      --[[
-      Blizzard UI sets frame has a design flaw: the data provider for all the sets is an hidden local
-      variable which cannot be replaced. This means that all methods of the WadrobeSetsCollectionMixin
-      which use SetsDataProvider must be replaced with new method which uses our implementation
-      ]]        
+    --[[
+    Blizzard UI sets frame has a design flaw: the data provider for all the sets is an hidden local
+    variable which cannot be replaced. This means that all methods of the WadrobeSetsCollectionMixin
+    which use SetsDataProvider must be replaced with new method which uses our implementation
+    ]]        
 
-      WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['update'] = ScrollFrameRedrawList
-      WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['Update'] = ScrollFrameRedrawList
-        
-      EnhanceBlizzardUI()
-        
-      -- replace functions of SetsCollectionFrame with addon custom functions
-      WardrobeCollectionFrame.SetsCollectionFrame['SelectSet'] = MyWardrobeSetsCollectionMixin_SelectSet
-      WardrobeCollectionFrame.SetsCollectionFrame['GetDefaultSetIDForBaseSet'] = MyWardrobeSetsCollectionMixin_GetDefaultSetIDForBaseSet
-      WardrobeCollectionFrame.SetsCollectionFrame['DisplaySet'] = MyWardrobeSetsCollectionMixin_DisplaySet      
-      WardrobeCollectionFrame.SetsCollectionFrame['OnSearchUpdate'] = MyWardrobeSetsCollectionMixin_OnSearchUpdate
+    WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['update'] = ScrollFrameRedrawList
+    WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame['Update'] = ScrollFrameRedrawList
+      
+    EnhanceBlizzardUI()
+      
+    -- replace functions of SetsCollectionFrame with addon custom functions
+    WardrobeCollectionFrame.SetsCollectionFrame['SelectSet'] = MyWardrobeSetsCollectionMixin_SelectSet
+    WardrobeCollectionFrame.SetsCollectionFrame['GetDefaultSetIDForBaseSet'] = MyWardrobeSetsCollectionMixin_GetDefaultSetIDForBaseSet
+    WardrobeCollectionFrame.SetsCollectionFrame['DisplaySet'] = MyWardrobeSetsCollectionMixin_DisplaySet      
+    WardrobeCollectionFrame.SetsCollectionFrame['OnSearchUpdate'] = MyWardrobeSetsCollectionMixin_OnSearchUpdate
 
-      -- WardrobeCollectionFrame.searchBox
-      -- printTable(WardrobeCollectionFrame.FilterDropDown)
-        
-      -- Replacing initialization of filter drop down menu with our own custom function
-      UIDropDownMenu_Initialize(WardrobeCollectionFrame.FilterDropDown, MyFilterDropDown_Inizialize, "MENU")
-      UIDropDownMenu_Initialize(WardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame.VariantSetsDropDown, MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown, "MENU")
-        
-    end
-  );
+    -- WardrobeCollectionFrame.searchBox
+    -- printTable(WardrobeCollectionFrame.FilterDropDown)
+      
+    -- Replacing initialization of filter drop down menu with our own custom function
+    UIDropDownMenu_Initialize(WardrobeCollectionFrame.FilterDropDown, MyFilterDropDown_Inizialize, "MENU")
+    UIDropDownMenu_Initialize(WardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame.VariantSetsDropDown, MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown, "MENU")
+    
     
   WardrobeCollectionFrame.SetsCollectionFrame:HookScript("OnHide", function(self) print "Hiding menu"; end)
 end
