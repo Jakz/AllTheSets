@@ -294,6 +294,8 @@ function MyDataProvider:CacheSets()
     end
     
     debug(true, 'cached ' .. count .. ' sets')
+    
+    self:FixOrder()
   
     -- now we create a map of all variants for the sets with the following structure
     -- variant[baseSetID] = { baseSet, variantSet1, variantSet2, ...}
@@ -330,8 +332,23 @@ function MyDataProvider:CacheSets()
       end
     end
   end
-
+  
   return self.sets
+end
+
+function MyDataProvider:FixOrder()
+  local delta = {
+    ['Raid Finder'] = 1,
+    ['Normal'] = 2,
+    ['Heroic'] = 3,
+    ['Mythic'] = 4
+  }
+  
+  for _,set in pairs(self.sets) do
+    if set.label == 'Uldir' then
+      set.uiOrder = delta[set.description] + 10000
+    end
+  end
 end
 
 function MyDataProvider:IsMatching(searchText, set)
@@ -1069,19 +1086,37 @@ local function MyFilterDropDown_Inizialize(self, level)
   end
 end
 
-local function UI_DecorateDropDownItemForClass(info, class, faction)
-  local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
-  local texCoords = CLASS_ICON_TCOORDS[class]      
+local function GenerateStringForSetType(class, armor, faction)
+  assert(class or armor and not (class and armor), 'armor or class must be set but not both')
+
+  local string = ''
   
-  info.text = '|c' .. RAID_CLASS_COLORS[class].colorStr .. classNames[class]
-  info.icon = 'Interface\\TargetingFrame\\UI-Classes-Circles'
-  info.tCoordLeft = texCoords[1]
-  info.tCoordRight = texCoords[2]
-  info.tCoordTop = texCoords[3]
-  info.tCoordBottom = texCoords[4]
+  -- we're dealing for a class specific set
+  if class then
+    local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
+    string = '|c' .. RAID_CLASS_COLORS[class.name].colorStr .. classNames[class.name]
+  -- we're dealing with an armor specific set
+  elseif armor then
+    string = armor.name
+  end
   
   if faction then
-    info.text = info.text .. COLORS.white .. ' (' .. FACTION_CONSTANTS[faction].color .. faction .. COLORS.white .. ')'
+    string = string .. COLORS.white .. ' (' .. FACTION_CONSTANTS[faction].color .. faction .. COLORS.white .. ')'
+  end
+  
+  return string
+end
+
+local function DecorateDropDownItemForClass(info, class, armor, faction)  
+  info.text = GenerateStringForSetType(class, armor, faction)
+  
+  if class then
+    local texCoords = CLASS_ICON_TCOORDS[class.name]    
+    info.icon = 'Interface\\TargetingFrame\\UI-Classes-Circles'
+    info.tCoordLeft = texCoords[1]
+    info.tCoordRight = texCoords[2]
+    info.tCoordTop = texCoords[3]
+    info.tCoordBottom = texCoords[4]
   end
 end
 
@@ -1185,7 +1220,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     
       -- for each class we build the checkbox button to enable its sets
       for m,c in pairs(classConstants) do
-        UI_DecorateDropDownItemForClass(info, c.name)
+        DecorateDropDownItemForClass(info, c.name, nil, nil)
             
         info.checked = function() return BitWiseOperation(options.filterClassMask, m, AND) ~= 0 end
         info.func = function() 
@@ -1348,13 +1383,7 @@ local function EnhanceBlizzardUI()
         local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
       
         for _, otherSet in pairs(setsForPlace) do
-          if otherSet.singleClass then
-            UI_DecorateDropDownItemForClass(info, otherSet.singleClass.name, otherSet.requiredFaction)
-          elseif otherSet.armorClass then
-            info.text = otherSet.armorClass.name
-            info.icon = nil
-            info.colorCode = FACTION_CONSTANTS[otherSet.requiredFaction] and FACTION_CONSTANTS[otherSet.requiredFaction].color
-          end
+          DecorateDropDownItemForClass(info, otherSet.singleClass, otherSet.armorClass, otherSet.requiredFaction)
 
           info.checked = function() return setInfo.setID == otherSet.setID end
           info.func = function() 
@@ -1367,7 +1396,7 @@ local function EnhanceBlizzardUI()
         
     UIDropDownMenu_Initialize(DetailsFrame.ClassChoiceDropDown, initialization, "MENU")
   end
-  
+
   -- Favorite right click menu
   assert(WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame.FavoriteDropDown and InitizalizeRightClickMenu, "must be non-nil")
 	UIDropDownMenu_Initialize(WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame.FavoriteDropDown, InitizalizeRightClickMenu, "MENU");
