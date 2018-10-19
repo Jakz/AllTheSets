@@ -48,6 +48,10 @@ function debug(always, text)
   end
 end
 
+local COLORS = {
+  white = '|cffffffff'
+}
+
 local ALL_CLASSES_MASK = 0xFFF
 local NO_CLASSES_MASK = 0x000
 local PLATE_CLASSES_MASK = 0x001 + 0x002 + 0x020
@@ -298,7 +302,8 @@ function MyDataProvider:CacheSets()
     for i, set in pairs(self.sets) do     
       if set.baseSetID then
         if not self.variantSets[set.baseSetID] then
-          self.variantSets[set.baseSetID] = { self.sets[baseSetID] }
+          assert(self.sets[set.baseSetID], 'must be non-nil')
+          self.variantSets[set.baseSetID] = { self.sets[set.baseSetID] }
         end
         self.variantSets[set.baseSetID][#self.variantSets[set.baseSetID] + 1] = set      
       end
@@ -818,11 +823,11 @@ local function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
         local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
         local color = RAID_CLASS_COLORS[setInfo.singleClass.name]
       
-        self.DetailsFrame.ClassChoiceButton:SetText(classNames[setInfo.singleClass.name])
-        self.DetailsFrame.ClassChoiceButton:GetFontString():SetTextColor(color.r, color.g, color.b, 1.0)
+        self.DetailsFrame.ClassChoiceButton:GetFontString():SetText('|c' .. color.colorStr .. classNames[setInfo.singleClass.name])
+        -- self.DetailsFrame.ClassChoiceButton:GetFontString():SetTextColor(color.r, color.g, color.b, 1.0)
       else
-        self.DetailsFrame.ClassChoiceButton:SetText(setInfo.armorClass.name)
-        self.DetailsFrame.ClassChoiceButton:GetFontString():SetTextColor(1.0, 1.0, 1.0, 1.0)
+        self.DetailsFrame.ClassChoiceButton:GetFontString():SetText(COLORS.white .. setInfo.armorClass.name)
+        -- self.DetailsFrame.ClassChoiceButton:GetFontString():SetTextColor(1.0, 1.0, 1.0, 1.0)
       end
     else
       self.DetailsFrame.ClassChoiceButton:Hide()
@@ -988,6 +993,66 @@ local function RedrawList(self)
   HybridScrollFrame_Update(self, totalHeight, self:GetHeight());
 end
 
+function InitizalizeRightClickMenu(self)
+	if (not self.baseSetID) then
+		return;
+	end
+  
+  debug(true, "opening favorite menu")
+
+	local baseSet = SetsDataProvider:GetBaseSetByID(self.baseSetID);
+	local variantSets = SetsDataProvider:GetVariantSets(self.baseSetID);
+	local useDescription = (#variantSets > 0);
+
+	local info = UIDropDownMenu_CreateInfo();
+	info.notCheckable = true;
+	info.disabled = nil;
+
+	if (baseSet.favoriteSetID) then
+		if (useDescription) then
+			local setInfo = SetsDataProvider:GetSetInfo(baseSet.favoriteSetID);
+			info.text = format(TRANSMOG_SETS_UNFAVORITE_WITH_DESCRIPTION, setInfo.description);
+		else
+			info.text = BATTLE_PET_UNFAVORITE;
+		end
+		info.func = function()
+			C_TransmogSets.SetIsFavorite(baseSet.favoriteSetID, false);
+      
+      for _, variant in pairs(variantSets) do
+        variant.favoriteSetID = nil
+      end
+   
+      RedrawList(WardrobeCollectionFrame.SetsCollectionFrame)
+		end
+	else
+		local targetSetID = WardrobeCollectionFrame.SetsCollectionFrame:GetDefaultSetIDForBaseSet(self.baseSetID);
+		if (useDescription) then
+			local setInfo = C_TransmogSets.GetSetInfo(targetSetID);
+			info.text = format(TRANSMOG_SETS_FAVORITE_WITH_DESCRIPTION, setInfo.description);
+		else
+			info.text = BATTLE_PET_FAVORITE;
+		end
+		info.func = function()
+			C_TransmogSets.SetIsFavorite(targetSetID, true);
+      
+      for _, variant in pairs(variantSets) do
+        variant.favoriteSetID = targetSetID
+      end
+ 
+      RedrawList(WardrobeCollectionFrame.SetsCollectionFrame)
+		end
+	end
+
+	UIDropDownMenu_AddButton(info, level);
+	info.disabled = nil;
+
+	info.text = CANCEL;
+	info.func = nil;
+	UIDropDownMenu_AddButton(info, level);
+end
+
+
+
 
 local function MyFilterDropDown_Inizialize(self, level)
   -- like original function but we call MyFilterDropDown_InitializeBaseSets for sets drop down
@@ -997,24 +1062,27 @@ local function MyFilterDropDown_Inizialize(self, level)
     return;
   end
 
-  if ( WardrobeCollectionFrame.activeFrame.searchType == LE_TRANSMOG_SEARCH_TYPE_ITEMS ) then
+  if (WardrobeCollectionFrame.activeFrame.searchType == LE_TRANSMOG_SEARCH_TYPE_ITEMS ) then
     WardrobeFilterDropDown_InitializeItems(self, level);
-  elseif ( WardrobeCollectionFrame.activeFrame.searchType == LE_TRANSMOG_SEARCH_TYPE_BASE_SETS ) then
+  elseif (WardrobeCollectionFrame.activeFrame.searchType == LE_TRANSMOG_SEARCH_TYPE_BASE_SETS ) then
     MyFilterDropDown_InitializeBaseSets(self, level);
   end
 end
 
-local function UI_DecorateDropDownItemForClass(info, class)
+local function UI_DecorateDropDownItemForClass(info, class, faction)
   local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
   local texCoords = CLASS_ICON_TCOORDS[class]      
   
-  info.text = classNames[class]
+  info.text = '|c' .. RAID_CLASS_COLORS[class].colorStr .. classNames[class]
   info.icon = 'Interface\\TargetingFrame\\UI-Classes-Circles'
   info.tCoordLeft = texCoords[1]
   info.tCoordRight = texCoords[2]
   info.tCoordTop = texCoords[3]
   info.tCoordBottom = texCoords[4]
-  info.colorCode = '|c' .. RAID_CLASS_COLORS[class].colorStr
+  
+  if faction then
+    info.text = info.text .. COLORS.white .. ' (' .. FACTION_CONSTANTS[faction].color .. faction .. COLORS.white .. ')'
+  end
 end
 
 local function Refresh()
@@ -1279,7 +1347,7 @@ local function EnhanceBlizzardUI()
       
       for _, otherSet in pairs(setsForPlace) do
         if otherSet.singleClass then
-          UI_DecorateDropDownItemForClass(info, otherSet.singleClass.name)
+          UI_DecorateDropDownItemForClass(info, otherSet.singleClass.name, otherSet.requiredFaction)
         elseif otherSet.armorClass then
           info.text = otherSet.armorClass.name
           info.icon = nil
@@ -1297,7 +1365,10 @@ local function EnhanceBlizzardUI()
     UIDropDownMenu_Initialize(DetailsFrame.ClassChoiceDropDown, initialization, "MENU")
   end
   
-   
+  -- Favorite right click menu
+  assert(WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame.FavoriteDropDown and InitizalizeRightClickMenu, "must be non-nil")
+	UIDropDownMenu_Initialize(WardrobeCollectionFrame.SetsCollectionFrame.ScrollFrame.FavoriteDropDown, InitizalizeRightClickMenu, "MENU");
+  
   -- Debug String  
   DetailsFrame.DebugString = DetailsFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
   DetailsFrame.DebugString:SetJustifyH("LEFT")
