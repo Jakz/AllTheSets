@@ -20,6 +20,10 @@ local optionSpecs =
     caption = 'Save filter between sessions'
   },
   {
+    ident = 'interfaceShowSetNameInGroupDropDown',
+    caption = 'Show set name in drop down menu'
+  },
+  {
     ident = 'interfaceShowDetailsDebugText',
     caption = 'Show debug text in details frame'
   }

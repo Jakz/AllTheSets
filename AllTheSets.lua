@@ -43,7 +43,7 @@ function printTable(table)
 end
 
 function debug(always, text)
-  if (always) then
+  if (false and always) then
     print("|cffff8000AllTheSets|cffffffff: ", text)
   end
 end
@@ -227,6 +227,7 @@ local options = {
   interfaceShowClassIconsInList = true,
   interfaceShowFactionIconInList = true,
   interfaceUseClassColorsWhereUseful = true,
+  interfaceShowSetNameInGroupDropDown = false,
   interfaceCompletionStatusInGroupDropDown = 'None',
   
   saveFilter = true,
@@ -1177,18 +1178,19 @@ local function MyFilterDropDown_Inizialize(self, level)
   end
 end
 
-local function GenerateStringForSetType(class, armor, faction)
+local function GenerateStringForSetType(class, armor, faction, setName)
   assert(class or armor and not (class and armor), 'armor or class must be set but not both (' .. tostring(class and class.name) .. ', ' .. tostring(armor and armor.name) .. ')')
 
   local string = ''
   
+  -- if setName is specified, the content is overridden
   -- we're dealing for a class specific set
   if class then
     local classNames = UnitSex('player') == 3 and LOCALIZED_CLASS_NAMES_FEMALE or LOCALIZED_CLASS_NAMES_MALE
-    string = '|c' .. RAID_CLASS_COLORS[class.name].colorStr .. classNames[class.name]
+    string = '|c' .. RAID_CLASS_COLORS[class.name].colorStr .. (setName or classNames[class.name])
   -- we're dealing with an armor specific set
   elseif armor then
-    string = armor.name
+    string = setName or armor.name
   end
   
   if false and faction then
@@ -1198,8 +1200,8 @@ local function GenerateStringForSetType(class, armor, faction)
   return string
 end
 
-local function DecorateDropDownItemForClass(info, class, armor, faction)  
-  info.text = GenerateStringForSetType(class, armor, faction)
+local function DecorateDropDownItemForClass(info, class, armor, faction, setName)  
+  info.text = GenerateStringForSetType(class, armor, faction, setName)
   
   if class then
     local texCoords = CLASS_ICON_TCOORDS[class.name]    
@@ -1316,7 +1318,7 @@ function InitializeFilterDropDownMenu(self, level)
     
       -- for each class we build the checkbox button to enable its sets
       for m,c in pairs(classConstants) do
-        DecorateDropDownItemForClass(info, c, nil, nil)
+        DecorateDropDownItemForClass(info, c, nil, nil, nil)
             
         info.checked = function() return BitWiseOperation(options.filterClassMask, m, AND) ~= 0 end
         info.func = function() 
@@ -1479,7 +1481,12 @@ function InitializeSetsByGroupDropDownMenu(self, level)
           info.notCheckable = false
           info.justifyH = 'LEFT'
 
-          DecorateDropDownItemForClass(info, otherSet.singleClass, otherSet.armorClass, otherSet.requiredFaction)
+          DecorateDropDownItemForClass(info, 
+            otherSet.singleClass, 
+            otherSet.armorClass, 
+            otherSet.requiredFaction,
+            options.interfaceShowSetNameInGroupDropDown and otherSet.name or nil
+          )
           
           if options.interfaceCompletionStatusInGroupDropDown == 'TopSource' then
             local owned, total = SetsDataProvider:GetSetSourceTopCounts(otherSet.baseSetID or otherSet.setID)
@@ -1487,10 +1494,15 @@ function InitializeSetsByGroupDropDownMenu(self, level)
           elseif options.interfaceCompletionStatusInGroupDropDown == 'AllSources' then
             local variants = SetsDataProvider:GetVariantSets(otherSet.setID)
             
-            for _,variant in pairs(variants) do
-              local o, t = SetsDataProvider:GetSetSourceCounts(variant.setID)
+            if #variants > 0 then
+              for _,variant in pairs(variants) do
+                local o, t = SetsDataProvider:GetSetSourceCounts(variant.setID)
+                info.text = GenerateStringForSetCompletion(info.text, o, t)        
+              end           
+            else
+              local o, t = SetsDataProvider:GetSetSourceCounts(otherSet.setID)
               info.text = GenerateStringForSetCompletion(info.text, o, t)        
-            end           
+            end
           end
       
           info.checked = function() return setInfo.setID == otherSet.setID or setInfo.baseSetID == otherSet.setID end
