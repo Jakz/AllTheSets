@@ -61,16 +61,24 @@ local CLOTH_CLASSES_MASK = 0x010 + 0x080 + 0x100
 
 local armorClassConstants = { -- TODO: localize
   [PLATE_CLASSES_MASK] = {
-    name = 'Plate'
+    name = 'Plate',
+    uiOrder = 23,
+    icon = 'Interface\\Icons\\inv_chest_plate01'  --inv_shield_06
   }, 
   [MAIL_CLASSES_MASK] = {
-    name = 'Mail'
+    name = 'Mail',
+    uiOrder = 22,
+    icon = 'Interface\\Icons\\inv_chest_chain_05'
   },
   [LEATHER_CLASSES_MASK] = {
-    name = 'Leather'
+    name = 'Leather',
+    uiOrder = 21,
+    icon = 'Interface\\Icons\\inv_chest_leather_09'
   },
   [CLOTH_CLASSES_MASK] = {
-    name = 'Cloth'
+    name = 'Cloth',
+    uiOrder = 20,
+    icon = 'Interface\\Icons\\inv_chest_cloth_21'  --inv_fabric_silk_01
   } 
 }
 
@@ -78,50 +86,62 @@ local classConstants = {
   [0x001] = 
   {
     name = 'WARRIOR',
+    uiOrder = 0
   },
   [0x002] = 
   {
     name = 'PALADIN',
+    uiOrder = 1
   },
   [0x004] = 
   {
     name = 'HUNTER',
+    uiOrder = 2
   },
   [0x008] = 
   {
     name = 'ROGUE',
+    uiOrder = 3
   },
   [0x010] = 
   {
     name = 'PRIEST',
+    uiOrder = 4
   },
   [0x020] = 
   {
     name = 'DEATHKNIGHT',
+    uiOrder = 5
   },
   [0x040] = 
   {
     name = 'SHAMAN',
+    uiOrder = 6
   },
   [0x080] = 
   {
     name = 'MAGE',
+    uiOrder = 7
   },
   [0x100] = 
   {
     name = 'WARLOCK',
+    uiOrder = 8
   },
   [0x200] = 
   {
     name = 'MONK',
+    uiOrder = 9
   },
   [0x400] = 
   {
     name = 'DRUID',
+    uiOrder = 10
   },
   [0x800] = 
   {
     name = 'DEMONHUNTER',
+    uiOrder = 11
   },
 }
 
@@ -207,11 +227,11 @@ local options = {
   interfaceShowClassIconsInList = true,
   interfaceShowFactionIconInList = true,
   interfaceUseClassColorsWhereUseful = true,
-  interfaceShowCompletionStatusInGroupDropDown = true,
+  interfaceCompletionStatusInGroupDropDown = 'None',
   
   saveFilter = true,
   
-  interfaceShowDetailsDebugText = true
+  interfaceShowDetailsDebugText = false
 };
 
 function AllTheSetsGetOptions()
@@ -298,7 +318,6 @@ function MyDataProvider:CacheSets()
     
     debug(true, 'cached ' .. count .. ' sets')
     
-    self:FixOrder()
   
     -- now we create a map of all variants for the sets with the following structure
     -- variant[baseSetID] = { baseSet, variantSet1, variantSet2, ...}
@@ -313,33 +332,42 @@ function MyDataProvider:CacheSets()
         self.variantSets[set.baseSetID][#self.variantSets[set.baseSetID] + 1] = set      
       end
     end
-  
-    -- sort variants by uiOrder
-    for _, variants in pairs(self.variantSets) do
-      table.sort(variants, function(s1, s2)
-        return s1.uiOrder < s2.uiOrder
-      end)
-    end
-          
+            
     self:DetermineFavorites();
   
     -- compute a map of sets by place (label field) to find sets for different classes for same place
+    -- while a group will be assigned to all sets which have a label, only base sets will be stored
+    -- in the group
     self.setsByPlace = { }  
     for i, set in pairs(self.sets) do
-      if set.label and not set.baseSetID then
+      if set.label then
         if not self.setsByPlace[set.label] then
           self.setsByPlace[set.label] = { }
         end
     
-        self.setsByPlace[set.label][#self.setsByPlace[set.label] + 1] = set
+        if not set.baseSetID then
+          self.setsByPlace[set.label][#self.setsByPlace[set.label] + 1] = set
+        end
+        set.group = self.setsByPlace[set.label]
       end
     end
+  end
+  
+  self:FixSets()
+  
+  -- sort variants by uiOrder
+  for _, variants in pairs(self.variantSets) do
+    table.sort(variants, function(s1, s2)
+      return s1.uiOrder < s2.uiOrder
+    end)
   end
   
   return self.sets
 end
 
-function MyDataProvider:FixOrder()
+function MyDataProvider:FixSets()
+  
+  -- fixing Uldir set order
   local delta = {
     ['Raid Finder'] = 1,
     ['Normal'] = 2,
@@ -349,9 +377,45 @@ function MyDataProvider:FixOrder()
   
   for _,set in pairs(self.sets) do
     if set.label == 'Uldir' then
-      set.uiOrder = delta[set.description] + 10000
+      set.uiOrder = delta[set.description] + 12000
     end
   end
+  
+  local SplitArmorAndClass = function(groups, sets)
+    local cgroup = {}
+    local agroup = {}
+  
+    for k, set in pairs(sets) do
+      if set.singleClass then
+        set.group = cgroup
+        table.insert(cgroup, set)
+      elseif set.armorClass then
+        set.group = agroup
+        table.insert(agroup, set)
+      else
+        assert(false, 'group set should have class mask or armor mask')
+      end
+    
+      local variants = self:GetVariantSets(set.setID)
+      for _, variant in pairs(variants) do
+        variant.group = set.group
+      end
+    end
+  
+    table.remove(groups, k)
+    table.insert(groups, cgroup)
+    table.insert(groups, agroup) 
+  end
+  
+  -- splitting Hellfire Citadel class sets from armor sets
+  group = self.setsByPlace['Hellfire Citadel']
+  assert(#group == (11 + 4), 'Hellfire Citadel sets should be 11 classes + 4 armor types')  
+  SplitArmorAndClass(self.setsByPlace, group)
+  
+  -- splitting Darkmoon Faire class sets from armor sets
+  group = self.setsByPlace['Darkmoon Faire']
+  assert(#group == (9 + 9), 'Darkmoon Faire sets should be 9 classes + 9 armor types')  
+  SplitArmorAndClass(self.setsByPlace, group)
 end
 
 function MyDataProvider:IsMatching(searchText, set)
@@ -416,13 +480,6 @@ end
 function MyDataProvider:GetBaseSetByID(setID)
   local sets = self:GetSets();
   return sets[setID].baseSetID and sets[baseSetID] or sets[setID]
-end
-
-function MyDataProvider:GetSetsByPlace(label)
-  if not self.setsByPlace then
-    self:CacheSets()
-  end
-  return self.setsByPlace[label] or { }
 end
 
 function MyDataProvider:GetVariantSets(baseSetID)
@@ -833,7 +890,7 @@ local function UpdateDetailsFrame(self, setID)
   
   -- class drop down
   if self.DetailsFrame.ClassChoiceButton and setInfo.label then
-    local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
+    local setsForPlace = setInfo.group
     if (setsForPlace and #setsForPlace > 1) then
       self.DetailsFrame.ClassChoiceButton:Show()
       
@@ -874,7 +931,7 @@ local function UpdateDetailsFrame(self, setID)
     string = string .. '\n|cffffffffclassMask: ' .. setInfo.classMask .. '\n'
     string = string .. '|cffffffffclasses: ' .. ClassMaskToString(setInfo.classMask, true) .. '\n'
     
-    local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
+    local setsForPlace = setInfo.group
     if (setsForPlace and #setsForPlace > 1) then
       string = string .. '|cffffffffgroup: ' .. setInfo.label .. ' (' .. #setsForPlace .. ')\n'
     else
@@ -938,30 +995,32 @@ local function ScrollFrameRedrawList(self)
   -- show the base set as selected
   local selectedSetID = self:GetParent():GetSelectedSetID();
   local selectedBaseSetID = selectedSetID and C_TransmogSets.GetBaseSetID(selectedSetID);
-  local setGroup = SetsDataProvider:GetSetsByPlace(SetsDataProvider:GetSetInfo(selectedBaseSetID).label)
-
-  -- since a selected set could be from a different class / armor type from same group
-  -- we need to search for matching id in group in case
-  local isSelected = function(set) 
-    if set.setID == selectedBaseSetID then
-      return true
-    elseif setGroup then      
+  local setGroup = SetsDataProvider:GetSetInfo(selectedBaseSetID).group
+  
+  -- let's find most suitable selected entry giving priority to same baseID or looking into group otherwise
+  local baseSetMatch, groupSetMatch = nil, nil
+  for i = 1, #buttons do
+    local index = i + offset;
+    if (index <= #baseSets) then
+      local set = baseSets[index]  
+      if set.setID == selectedBaseSetID then  
+        baseSetMatch = set.setID 
+      end
+          
       for _, gset in pairs(setGroup) do
-        if gset.setID == set.setID then
-          return true
+        if not groupSetMatch and set.setID == gset.setID then
+          groupSetMatch = set.setID
         end
       end
     end
-    
-    return false
   end
-  
+  local selectedID = baseSetMatch or groupSetMatch
 
   for i = 1, #buttons do
     local color;
     local button = buttons[i];
     local setIndex = i + offset;
-    if ( setIndex <= #baseSets ) then
+    if (setIndex <= #baseSets) then
       local baseSet = baseSets[setIndex];
       button:Show();
       button.Name:SetText(baseSet.name);
@@ -1022,11 +1081,11 @@ local function ScrollFrameRedrawList(self)
       button.Label:SetText(baseSet.label);
       button.Icon:SetTexture(SetsDataProvider:GetIconForSet(baseSet.setID));
       button.Icon:SetDesaturation((topSourcesCollected == 0) and 1 or 0);
-      button.SelectedTexture:SetShown(isSelected(baseSet));
+      button.SelectedTexture:SetShown(baseSet.setID == selectedID);
       button.Favorite:SetShown(baseSet.favoriteSetID);
       button.New:SetShown(SetsDataProvider:IsBaseSetNew(baseSet.setID));
       button.setID = baseSet.setID;
-
+      
       if (topSourcesCollected == 0 or setCollected) then
         button.ProgressBar:Hide();
       else
@@ -1119,7 +1178,7 @@ local function MyFilterDropDown_Inizialize(self, level)
 end
 
 local function GenerateStringForSetType(class, armor, faction)
-  assert(class or armor and not (class and armor), 'armor or class must be set but not both')
+  assert(class or armor and not (class and armor), 'armor or class must be set but not both (' .. tostring(class and class.name) .. ', ' .. tostring(armor and armor.name) .. ')')
 
   local string = ''
   
@@ -1149,6 +1208,12 @@ local function DecorateDropDownItemForClass(info, class, armor, faction)
     info.tCoordRight = texCoords[2]
     info.tCoordTop = texCoords[3]
     info.tCoordBottom = texCoords[4]
+  elseif armor then
+    info.icon = armor.icon
+    info.tCoordLeft = 0.05
+    info.tCoordRight = 0.95
+    info.tCoordTop = 0.05
+    info.tCoordBottom = 0.95
   end
 end
 
@@ -1360,6 +1425,86 @@ function InitializeFilterDropDownMenu(self, level)
   end
 end
 
+function InitializeSetsByGroupDropDownMenu(self, level)
+  local info = UIDropDownMenu_CreateInfo()
+  info.keepShownOnClick = false
+  
+  local setID = WardrobeCollectionFrame.SetsCollectionFrame:GetSelectedSetID()
+  
+  if setID then 
+    local setInfo = SetsDataProvider:GetSetInfo(setID)
+    local setsForPlace = setInfo.group
+    
+    local groupByFaction = {
+      ['None'] = {},
+      ['Alliance'] = {},
+      ['Horde'] = {}
+    }
+    
+    -- let's group all sets according to the faction
+    for _, otherSet in pairs(setsForPlace) do
+      local batch = groupByFaction[otherSet.requiredFaction or 'None']
+      batch[#batch + 1] = otherSet
+    end
+    
+    -- we sort sets such that classes are before armor type and they are correctly ordered according to specified value
+    for _, faction in ipairs({ 'None', 'Alliance', 'Horde'}) do
+      local batch = groupByFaction[faction]
+      table.sort(batch, function(s1, s2) 
+        local o1 = (s1.singleClass and s1.singleClass.uiOrder) or
+          (s1.armorClass and s1.armorClass.uiOrder) or -s1.uiOrder
+        
+        local o2 = (s2.singleClass and s2.singleClass.uiOrder) or
+          (s2.armorClass and s2.armorClass.uiOrder) or -s2.uiOrder
+          
+        return o1 < o2
+      end)
+      
+      if #batch > 0 then
+        -- add header
+        if faction ~= 'None' then
+          info.text = FACTION_CONSTANTS[faction].color .. faction
+          info.icon = nil
+          info.disabled = true
+          info.notCheckable = true
+          info.justifyH = 'CENTER'
+          info.func = nil
+          
+          UIDropDownMenu_AddButton(info, level)
+        end
+ 
+        for _, otherSet in pairs(batch) do
+        
+          info.disabled = false
+          info.notCheckable = false
+          info.justifyH = 'LEFT'
+
+          DecorateDropDownItemForClass(info, otherSet.singleClass, otherSet.armorClass, otherSet.requiredFaction)
+          
+          if options.interfaceCompletionStatusInGroupDropDown == 'TopSource' then
+            local owned, total = SetsDataProvider:GetSetSourceTopCounts(otherSet.baseSetID or otherSet.setID)
+            info.text = GenerateStringForSetCompletion(info.text, owned, total)
+          elseif options.interfaceCompletionStatusInGroupDropDown == 'AllSources' then
+            local variants = SetsDataProvider:GetVariantSets(otherSet.setID)
+            
+            for _,variant in pairs(variants) do
+              local o, t = SetsDataProvider:GetSetSourceCounts(variant.setID)
+              info.text = GenerateStringForSetCompletion(info.text, o, t)        
+            end           
+          end
+      
+          info.checked = function() return setInfo.setID == otherSet.setID or setInfo.baseSetID == otherSet.setID end
+          info.func = function() 
+            WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(otherSet.setID)
+          end
+      
+          UIDropDownMenu_AddButton(info, level)        
+        end
+      end
+    end 
+  end
+end
+
 local function EnhanceBlizzardUI()
   local DetailsFrame = WardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame
   
@@ -1401,72 +1546,8 @@ local function EnhanceBlizzardUI()
   -- Class choice drop down menu
   do
     DetailsFrame.ClassChoiceDropDown = CreateFrame("frame", nil, UIParent, "UIDropDownMenuTemplate")
-    UIDropDownMenu_SetWidth(DetailsFrame.ClassChoiceDropDown, 200)
-    
-    local initialization = function(self, level)
-      local info = UIDropDownMenu_CreateInfo()
-      info.keepShownOnClick = false
-      
-      local setID = WardrobeCollectionFrame.SetsCollectionFrame:GetSelectedSetID()
-      
-      if setID then 
-        local setInfo = SetsDataProvider:GetSetInfo(setID)
-        local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
-        
-        local groupByFaction = {
-          ['None'] = {},
-          ['Alliance'] = {},
-          ['Horde'] = {}
-        }
-        
-        -- let's group all sets according to the faction
-        for _, otherSet in pairs(setsForPlace) do
-          local batch = groupByFaction[otherSet.requiredFaction or 'None']
-          batch[#batch + 1] = otherSet
-        end
-        
-        for _, faction in ipairs({ 'None', 'Alliance', 'Horde'}) do
-          local batch = groupByFaction[faction]
-          
-          if #batch > 0 then
-            -- add header
-            if faction ~= 'None' then
-              info.text = FACTION_CONSTANTS[faction].color .. faction
-              info.icon = nil
-              info.disabled = true
-              info.notCheckable = true
-              info.justifyH = 'CENTER'
-              info.func = nil
-              
-              UIDropDownMenu_AddButton(info, level)
-            end
-     
-            for _, otherSet in pairs(batch) do
-            
-              info.disabled = false
-              info.notCheckable = false
-              info.justifyH = 'LEFT'
-    
-              DecorateDropDownItemForClass(info, otherSet.singleClass, otherSet.armorClass, otherSet.requiredFaction)
-              
-              if options.interfaceShowCompletionStatusInGroupDropDown then
-                local owned, total = SetsDataProvider:GetSetSourceTopCounts(otherSet.baseSetID or otherSet.setID);
-                info.text = GenerateStringForSetCompletion(info.text, owned, total)
-              end
-          
-              info.checked = function() return setInfo.setID == otherSet.setID or setInfo.baseSetID == otherSet.setID end
-              info.func = function() 
-                WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(otherSet.setID)
-              end
-          
-              UIDropDownMenu_AddButton(info, level)        
-            end
-          end
-        end 
-      end
-    end
-        
-    UIDropDownMenu_Initialize(DetailsFrame.ClassChoiceDropDown, initialization, "MENU")
+    UIDropDownMenu_SetWidth(DetailsFrame.ClassChoiceDropDown, 200)     
+    UIDropDownMenu_Initialize(DetailsFrame.ClassChoiceDropDown, InitializeSetsByGroupDropDownMenu, "MENU")
   end
 
   -- Favorite right click menu
@@ -1502,7 +1583,9 @@ local function onEvent(self, event, ...)
       debug(true, 'found saved options, loading')
       
       for k,v in pairs(AllTheSetsOptions.options) do
-        options[k] = v
+        if (options[k]) then
+          options[k] = v
+        end
       end
     end
     
