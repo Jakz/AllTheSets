@@ -207,6 +207,7 @@ local options = {
   interfaceShowClassIconsInList = true,
   interfaceShowFactionIconInList = true,
   interfaceUseClassColorsWhereUseful = true,
+  interfaceShowCompletionStatusInGroupDropDown = true,
   
   saveFilter = true,
   
@@ -891,7 +892,20 @@ local function UpdateDetailsFrame(self, setID)
   end
 end
 
-local function MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown()
+
+local function GenerateStringForSetCompletion(text, owned, total)
+  local colorCode = IN_PROGRESS_FONT_COLOR_CODE
+  
+  if (owned == total) then
+    colorCode = NORMAL_FONT_COLOR_CODE
+  elseif (owned == 0) then
+    colorCode = GRAY_FONT_COLOR_CODE
+  end
+  
+  return format(ITEM_SET_NAME, text..colorCode, owned, total)
+end
+
+local function InitializeSetVariantsDropDownMenu()
   local selectedSetID = WardrobeCollectionFrame.SetsCollectionFrame:GetSelectedSetID();
   if ( not selectedSetID ) then
     return;
@@ -907,7 +921,7 @@ local function MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown()
     elseif ( numSourcesCollected == 0 ) then
       colorCode = GRAY_FONT_COLOR_CODE;
     end
-    info.text = format(ITEM_SET_NAME, variantSet.description..colorCode, numSourcesCollected, numSourcesTotal);
+    info.text = GenerateStringForSetCompletion(variantSet.description, numSourcesCollected, numSourcesTotal);
     info.checked = function() return variantSet.setID == selectedSetID end;
     info.func = function() WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(variantSet.setID); end;
     UIDropDownMenu_AddButton(info);
@@ -1100,7 +1114,7 @@ local function MyFilterDropDown_Inizialize(self, level)
   if (WardrobeCollectionFrame.activeFrame.searchType == LE_TRANSMOG_SEARCH_TYPE_ITEMS ) then
     WardrobeFilterDropDown_InitializeItems(self, level);
   elseif (WardrobeCollectionFrame.activeFrame.searchType == LE_TRANSMOG_SEARCH_TYPE_BASE_SETS ) then
-    MyFilterDropDown_InitializeBaseSets(self, level);
+    InitializeFilterDropDownMenu(self, level);
   end
 end
 
@@ -1118,7 +1132,7 @@ local function GenerateStringForSetType(class, armor, faction)
     string = armor.name
   end
   
-  if faction then
+  if false and faction then
     string = string .. COLORS.white .. ' (' .. FACTION_CONSTANTS[faction].color .. faction .. COLORS.white .. ')'
   end
   
@@ -1143,7 +1157,7 @@ local function Refresh()
   WardrobeCollectionFrame.SetsCollectionFrame:Refresh()
 end
 
-function MyFilterDropDown_InitializeBaseSets(self, level)
+function InitializeFilterDropDownMenu(self, level)
   local info = UIDropDownMenu_CreateInfo();
   info.keepShownOnClick = true
   
@@ -1398,16 +1412,57 @@ local function EnhanceBlizzardUI()
       if setID then 
         local setInfo = SetsDataProvider:GetSetInfo(setID)
         local setsForPlace = SetsDataProvider:GetSetsByPlace(setInfo.label)
-      
+        
+        local groupByFaction = {
+          ['None'] = {},
+          ['Alliance'] = {},
+          ['Horde'] = {}
+        }
+        
+        -- let's group all sets according to the faction
         for _, otherSet in pairs(setsForPlace) do
-          DecorateDropDownItemForClass(info, otherSet.singleClass, otherSet.armorClass, otherSet.requiredFaction)
-
-          info.checked = function() return setInfo.setID == otherSet.setID or setInfo.baseSetID == otherSet.setID end
-          info.func = function() 
-            WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(otherSet.setID)
-          end
-          UIDropDownMenu_AddButton(info, level)        
+          local batch = groupByFaction[otherSet.requiredFaction or 'None']
+          batch[#batch + 1] = otherSet
         end
+        
+        for _, faction in ipairs({ 'None', 'Alliance', 'Horde'}) do
+          local batch = groupByFaction[faction]
+          
+          if #batch > 0 then
+            -- add header
+            if faction ~= 'None' then
+              info.text = FACTION_CONSTANTS[faction].color .. faction
+              info.icon = nil
+              info.disabled = true
+              info.notCheckable = true
+              info.justifyH = 'CENTER'
+              info.func = nil
+              
+              UIDropDownMenu_AddButton(info, level)
+            end
+     
+            for _, otherSet in pairs(batch) do
+            
+              info.disabled = false
+              info.notCheckable = false
+              info.justifyH = 'LEFT'
+    
+              DecorateDropDownItemForClass(info, otherSet.singleClass, otherSet.armorClass, otherSet.requiredFaction)
+              
+              if options.interfaceShowCompletionStatusInGroupDropDown then
+                local owned, total = SetsDataProvider:GetSetSourceTopCounts(otherSet.baseSetID or otherSet.setID);
+                info.text = GenerateStringForSetCompletion(info.text, owned, total)
+              end
+          
+              info.checked = function() return setInfo.setID == otherSet.setID or setInfo.baseSetID == otherSet.setID end
+              info.func = function() 
+                WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(otherSet.setID)
+              end
+          
+              UIDropDownMenu_AddButton(info, level)        
+            end
+          end
+        end 
       end
     end
         
@@ -1445,7 +1500,10 @@ local function onEvent(self, event, ...)
     
     if AllTheSetsOptions and AllTheSetsOptions.options then
       debug(true, 'found saved options, loading')
-      options = AllTheSetsOptions.options
+      
+      for k,v in pairs(AllTheSetsOptions.options) do
+        options[k] = v
+      end
     end
     
     if not options.saveFilter then
@@ -1480,7 +1538,7 @@ local function onEvent(self, event, ...)
       
     -- Replacing initialization of filter drop down menu with our own custom function
     UIDropDownMenu_Initialize(WardrobeCollectionFrame.FilterDropDown, MyFilterDropDown_Inizialize, "MENU")
-    UIDropDownMenu_Initialize(WardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame.VariantSetsDropDown, MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown, "MENU")
+    UIDropDownMenu_Initialize(WardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame.VariantSetsDropDown, InitializeSetVariantsDropDownMenu, "MENU")
     
     
     --WardrobeCollectionFrame.SetsCollectionFrame:HookScript("OnHide", function(self) print "Hiding menu"; end)
