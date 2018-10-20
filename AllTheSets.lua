@@ -208,6 +208,8 @@ local options = {
   interfaceShowFactionIconInList = true,
   interfaceUseClassColorsWhereUseful = true,
   
+  saveFilter = true,
+  
   interfaceShowDetailsDebugText = true
 };
 
@@ -738,7 +740,7 @@ end
 
 local DETAILS_TITLE_COLOR = CreateColor(1, 0.82, 0)
 
-local function MyWardrobeSetsCollectionMixin_DisplaySet(self, setID)
+local function UpdateDetailsFrame(self, setID)
   local setInfo = SetsDataProvider:GetSetInfo(setID)
   
   if not setInfo then
@@ -922,6 +924,24 @@ local function ScrollFrameRedrawList(self)
   -- show the base set as selected
   local selectedSetID = self:GetParent():GetSelectedSetID();
   local selectedBaseSetID = selectedSetID and C_TransmogSets.GetBaseSetID(selectedSetID);
+  local setGroup = SetsDataProvider:GetSetsByPlace(SetsDataProvider:GetSetInfo(selectedBaseSetID).label)
+
+  -- since a selected set could be from a different class / armor type from same group
+  -- we need to search for matching id in group in case
+  local isSelected = function(set) 
+    if set.setID == selectedBaseSetID then
+      return true
+    elseif setGroup then      
+      for _, gset in pairs(setGroup) do
+        if gset.setID == set.setID then
+          return true
+        end
+      end
+    end
+    
+    return false
+  end
+  
 
   for i = 1, #buttons do
     local color;
@@ -988,7 +1008,7 @@ local function ScrollFrameRedrawList(self)
       button.Label:SetText(baseSet.label);
       button.Icon:SetTexture(SetsDataProvider:GetIconForSet(baseSet.setID));
       button.Icon:SetDesaturation((topSourcesCollected == 0) and 1 or 0);
-      button.SelectedTexture:SetShown(baseSet.setID == selectedBaseSetID);
+      button.SelectedTexture:SetShown(isSelected(baseSet));
       button.Favorite:SetShown(baseSet.favoriteSetID);
       button.New:SetShown(SetsDataProvider:IsBaseSetNew(baseSet.setID));
       button.setID = baseSet.setID;
@@ -1220,7 +1240,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     
       -- for each class we build the checkbox button to enable its sets
       for m,c in pairs(classConstants) do
-        DecorateDropDownItemForClass(info, c.name, nil, nil)
+        DecorateDropDownItemForClass(info, c, nil, nil)
             
         info.checked = function() return BitWiseOperation(options.filterClassMask, m, AND) ~= 0 end
         info.func = function() 
@@ -1385,7 +1405,7 @@ local function EnhanceBlizzardUI()
         for _, otherSet in pairs(setsForPlace) do
           DecorateDropDownItemForClass(info, otherSet.singleClass, otherSet.armorClass, otherSet.requiredFaction)
 
-          info.checked = function() return setInfo.setID == otherSet.setID end
+          info.checked = function() return setInfo.setID == otherSet.setID or setInfo.baseSetID == otherSet.setID end
           info.func = function() 
             WardrobeCollectionFrame.SetsCollectionFrame:SelectSet(otherSet.setID)
           end
@@ -1426,20 +1446,21 @@ local function onEvent(self, event, ...)
     AllTheSetsOptions.options = options
   elseif (event == "ADDON_LOADED" and select(1, ...) == "AllTheSets") then
     
-    if AllTheSetOptions and AllTheSetsOptions.options then
+    if AllTheSetsOptions and AllTheSetsOptions.options then
+      debug(true, 'found saved options, loading')
       options = AllTheSetsOptions.options
     end
     
+    if not options.saveFilter then
+      ResetSearchFilter()
+    end
+
   elseif (event == "ADDON_LOADED" and select(1, ...) == "Blizzard_Collections") then
     -- self:UnregisterEvent("ADDON_LOADED");
-    print "Registering hooks for AllTheSets";
 
     -- WardrobeCollectionFrame.SetsTransmogFrame
     -- WardrobeCollectionFrame.FilterButton:SetEnabled(false);
-    
-    ResetSearchFilter()
 
-        
     --[[
     Blizzard UI sets frame has a design flaw: the data provider for all the sets is an hidden local
     variable which cannot be replaced. This means that all methods of the WadrobeSetsCollectionMixin
@@ -1454,7 +1475,7 @@ local function onEvent(self, event, ...)
     -- replace functions of SetsCollectionFrame with addon custom functions
     WardrobeCollectionFrame.SetsCollectionFrame['SelectSet'] = MyWardrobeSetsCollectionMixin_SelectSet
     WardrobeCollectionFrame.SetsCollectionFrame['GetDefaultSetIDForBaseSet'] = MyWardrobeSetsCollectionMixin_GetDefaultSetIDForBaseSet
-    WardrobeCollectionFrame.SetsCollectionFrame['DisplaySet'] = MyWardrobeSetsCollectionMixin_DisplaySet      
+    WardrobeCollectionFrame.SetsCollectionFrame['DisplaySet'] = UpdateDetailsFrame      
     WardrobeCollectionFrame.SetsCollectionFrame['OnSearchUpdate'] = MyWardrobeSetsCollectionMixin_OnSearchUpdate
 
     -- WardrobeCollectionFrame.searchBox
@@ -1465,10 +1486,11 @@ local function onEvent(self, event, ...)
     UIDropDownMenu_Initialize(WardrobeCollectionFrame.SetsCollectionFrame.DetailsFrame.VariantSetsDropDown, MyWardrobeSetsCollectionMixin_OpenVariantSetsDropDown, "MENU")
     
     
-  WardrobeCollectionFrame.SetsCollectionFrame:HookScript("OnHide", function(self) print "Hiding menu"; end)
-end
+    --WardrobeCollectionFrame.SetsCollectionFrame:HookScript("OnHide", function(self) print "Hiding menu"; end)
+  end
     
 end
+
 frame:SetScript('OnEvent', onEvent)
 frame:RegisterEvent('PLAYER_LOGIN')
 frame:RegisterEvent('PLAYER_LOGOUT')
