@@ -1093,8 +1093,6 @@ end
 
 local function MyFilterDropDown_Inizialize(self, level)
   -- like original function but we call MyFilterDropDown_InitializeBaseSets for sets drop down
-  
-  debug(true, "initialize dropdown ", level)
   if ( not WardrobeCollectionFrame.activeFrame ) then
     return;
   end
@@ -1146,7 +1144,6 @@ local function Refresh()
 end
 
 function MyFilterDropDown_InitializeBaseSets(self, level)
-
   local info = UIDropDownMenu_CreateInfo();
   info.keepShownOnClick = true
   
@@ -1158,7 +1155,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       options.filterShowCollected = value
       Refresh()
     end
-    info.checked = options.filterShowCollected
+    info.checked = function() return options.filterShowCollected end
     UIDropDownMenu_AddButton(info, level);
 
     info.text = NOT_COLLECTED;
@@ -1166,7 +1163,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       options.filterShowNotCollected = value 
       Refresh()
     end
-    info.checked = options.filterShowNotCollected
+    info.checked = function() return options.filterShowNotCollected end
     UIDropDownMenu_AddButton(info, level);
     
     info.text = 'PvE';
@@ -1174,7 +1171,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       options.filterShowPvE = value 
       Refresh()
     end
-    info.checked = options.filterShowPvE
+    info.checked = function() return options.filterShowPvE end
     UIDropDownMenu_AddButton(info, level);
     
     info.text = 'PvP';
@@ -1182,7 +1179,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
       options.filterShowPvP = value 
       Refresh()
     end
-    info.checked = options.filterShowPvP
+    info.checked = function() return options.filterShowPvP end
     UIDropDownMenu_AddButton(info, level);
     
     UIDropDownMenu_AddSeparator(1);
@@ -1222,7 +1219,7 @@ function MyFilterDropDown_InitializeBaseSets(self, level)
     -- Reset filter button
     info.notCheckable = true
     info.text = 'Reset default filter' -- TODO: localize
-    info.func = function(_, _, _, value) 
+    info.func = function() 
       ResetSearchFilter();
       UIDropDownMenu_Refresh(self, 1, 1);
       Refresh()
